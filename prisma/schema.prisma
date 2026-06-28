@@ -1,0 +1,132 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============ MODULE GROUPS ============
+model ModuleGroup {
+  id        String   @id @default(cuid())
+  name      String
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  items     ModuleGroupItem[]
+}
+
+model ModuleGroupItem {
+  id        String      @id @default(cuid())
+  groupId   String
+  group     ModuleGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  moduleKey String
+  position  Int         @default(0)
+  createdAt DateTime    @default(now())
+
+  @@unique([groupId, moduleKey])
+}
+
+// ============ MODULES (built-in + custom) ============
+model Module {
+  key       String   @id
+  label     String
+  accent    String   @default("#C1502E")
+  kind      String   @default("checklist")
+  period    String   @default("day")
+  builtin   Boolean  @default(false)
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============ CHECKLIST ITEMS ============
+model ChecklistItem {
+  id        String   @id @default(cuid())
+  module    String
+  label     String
+  position  Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  statuses  ChecklistStatus[]
+}
+
+model ChecklistStatus {
+  itemId    String
+  item      ChecklistItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  periodKey String
+  checked   Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+
+  @@id([itemId, periodKey])
+}
+
+// ============ TASKS ============
+model Task {
+  id        String   @id @default(cuid())
+  label     String
+  done      Boolean  @default(false)
+  position  Int      @default(0)
+  dayKey    String
+  priority  String   @default("media")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============ MOOD MOMENTS (time-based entries throughout the day) ============
+model MoodMoment {
+  id        String   @id @default(cuid())
+  dayKey    String
+  time      String
+  value     Int
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Daily mood evaluation (overall day self-assessment)
+model MoodDaily {
+  dayKey    String   @id
+  value     Int
+  note      String?
+  updatedAt DateTime @updatedAt
+}
+
+// ============ WATER LOG ============
+model WaterLog {
+  dayKey    String   @id
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+// ============ MACROS LOG ============
+model MacrosLog {
+  dayKey    String   @id
+  carbs     Int      @default(0)
+  protein   Int      @default(0)
+  fat       Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+// ============ PYRAMID LOG ============
+model PyramidLog {
+  dayKey    String   @id
+  counts    String   @default("{}")
+  updatedAt DateTime @updatedAt
+}
+
+// ============ NUTRITION SETTINGS ============
+model NutritionSettings {
+  id        Int      @id @default(1)
+  settings  String
+  updatedAt DateTime @updatedAt
+}
+
+// ============ GRATITUDE LOG ============
+model GratitudeLog {
+  dayKey    String   @id
+  items     String   @default("[]")
+  updatedAt DateTime @updatedAt
+}
