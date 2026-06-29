@@ -1,0 +1,1687 @@
+  1139→/* ================== SUPABASE I/O (com fallback local) ================== */
+  1140→async function fetchAll(){
+  1141→  if(!sb){ setOnline(false); return; }
+  1142→  try{
+  1143→    const [items, status, tasks, mood, water, macros, pyramid, nutri, grat, customs] = await Promise.all([
+  1144→      sb.from("checklist_items").select("*").order("position"),
+  1145→      sb.from("checklist_status").select("*"),
+  1146→      sb.from("tasks").select("*").order("position"),
+  1147→      sb.from("mood_log").select("*"),
+  1148→      sb.from("water_log").select("*"),
+  1149→      sb.from("macros_log").select("*"),
+  1150→      sb.from("pyramid_log").select("*"),
+  1151→      sb.from("nutrition_settings").select("*").limit(1),
+  1152→      sb.from("gratitude_log").select("*"),
+  1153→      sb.from("custom_modules").select("*").order("created_at"),
+  1154→    ]);
+  1155→    if(items.error || status.error || tasks.error || mood.error) throw new Error("fetch error");
+  1156→    // core data (required)
+  1157→    cache.items = items.data;
+  1158→    cache.status = status.data;
+  1159→    cache.tasks = tasks.data;
+  1160→    cache.mood = mood.data;
+  1161→    // nutrition data (optional — if tables don't exist yet, silently keep local cache)
+  1162→    if(!water.error && water.data)  cache.water = water.data.map(r=>({day_key:r.day_key, count:r.count}));
+  1163→    if(!macros.error && macros.data) cache.macrosLog = macros.data.map(r=>({day_key:r.day_key, carbs:r.carbs||0, protein:r.protein||0, fat:r.fat||0}));
+  1164→    if(!pyramid.error && pyramid.data) cache.pyramidLog = pyramid.data.map(r=>({day_key:r.day_key, counts:r.counts||{}}));
+  1165→    if(!grat.error && grat.data) cache.gratitude = grat.data.map(r=>({day_key:r.day_key, items:r.items||["","",""]}));
+  1166→    if(!customs.error && customs.data) cache.customModules = customs.data.map(r=>({key:r.key, label:r.label, accent:r.accent}));
+  1167→    // nutrition settings — only overwrite if remote has real data (not empty {})
+  1168→    if(!nutri.error && nutri.data && nutri.data.length>0){
+  1169→      const remote = nutri.data[0].settings;
+  1170→      if(remote && Object.keys(remote).length > 0){
+  1171→        cache.nutritionSettings = Object.assign(defaultNutritionSettings(), remote);
+  1172→      }
+  1173→    }
+  1174→    saveCache();
+  1175→    setOnline(true);
+  1176→    await seedDefaultsIfNeeded();
+  1177→    await syncCustomModulesFromCache();
+  1178→  }catch(e){
+  1179→    setOnline(false);
+  1180→  }
+  1181→}
+  1182→function setOnline(v){
+  1183→  ONLINE = v;
+  1184→  const b = document.getElementById("syncBadge");
+  1185→  b.textContent = v ? "sincronizado" : "offline (local)";
+  1186→  b.className = "sync " + (v ? "ok" : "off");
+  1187→}
+  1188→
+  1189→async function seedDefaultsIfNeeded(){
+  1190→  if(localStorage.getItem("ritual_seeded_v2")) return;
+  1191→  let needsInsert = [];
+  1192→  for(const key of Object.keys(MODULES)){
+  1193→    const m = MODULES[key];
+  1194→    if(m.kind !== "checklist") continue;
+  1195→    if(m.custom) continue; // do not seed custom into supabase
+  1196→    const existing = cache.items.filter(i=>i.module===key);
+  1197→    if(existing.length === 0){
+  1198→      m.defaults.forEach((label, idx)=>{
+  1199→        needsInsert.push({ module:key, label, position: idx, active:true });
+  1200→      });
+  1201→    }
+  1202→  }
+  1203→  if(needsInsert.length){
+  1204→    const { data, error } = await sb.from("checklist_items").insert(needsInsert).select();
+  1205→    if(!error && data){
+  1206→      cache.items = cache.items.concat(data);
+  1207→      saveCache();
+  1208→    }
+  1209→  }
+  1210→  localStorage.setItem("ritual_seeded_v2","1");
+  1211→}
+  1212→
+  1213→async function addItem(moduleKey, label){
+  1214→  const existing = cache.items.filter(i=>i.module===moduleKey);
+  1215→  const position = existing.length ? Math.max(...existing.map(i=>i.position))+1 : 0;
+  1216→  const row = { module: moduleKey, label, position, active:true };
+  1217→  const m = MODULES[moduleKey];
+  1218→  if(m && m.custom){
+  1219→    row.id = "local-"+Date.now()+"-"+Math.random().toString(36).slice(2,6);
+  1220→    cache.items.push(row);
+  1221→  } else {
+  1222→    try{
+  1223→      const { data, error } = await sb.from("checklist_items").insert(row).select().single();
+  1224→      if(error) throw error;
+  1225→      cache.items.push(data);
+  1226→    }catch(e){
+  1227→      row.id = "local-"+Date.now();
+  1228→      cache.items.push(row);
+  1229→    }
+  1230→  }
+  1231→  saveCache();
+  1232→  render();
+  1233→}
+  1234→async function editItemLabel(id, label){
+  1235→  const it = cache.items.find(i=>i.id===id);
+  1236→  if(it) it.label = label;
+  1237→  saveCache();
+  1238→  try{ if(sb) await sb.from("checklist_items").update({label}).eq("id", id); }catch(e){}
+  1239→  render();
+  1240→}
+  1241→async function deleteItem(id){
+  1242→  cache.items = cache.items.filter(i=>i.id!==id);
+  1243→  cache.status = cache.status.filter(s=>s.item_id!==id);
+  1244→  saveCache();
+  1245→  try{ if(sb) await sb.from("checklist_items").delete().eq("id", id); }catch(e){}
+  1246→  render();
+  1247→}
+  1248→async function moveItem(moduleKey, id, dir){
+  1249→  const list = cache.items.filter(i=>i.module===moduleKey).sort((a,b)=>a.position-b.position);
+  1250→  const idx = list.findIndex(i=>i.id===id);
+  1251→  const swapIdx = idx + dir;
+  1252→  if(swapIdx < 0 || swapIdx >= list.length) return;
+  1253→  const a = list[idx], b = list[swapIdx];
+  1254→  const tmp = a.position; a.position = b.position; b.position = tmp;
+  1255→  saveCache();
+  1256→  try{
+  1257→    if(sb){
+  1258→      await sb.from("checklist_items").update({position:a.position}).eq("id", a.id);
+  1259→      await sb.from("checklist_items").update({position:b.position}).eq("id", b.id);
+  1260→    }
+  1261→  }catch(e){}
+  1262→  render();
+  1263→}
+  1264→
+  1265→async function toggleCheck(itemId, periodKey, btnEl){
+  1266→  let st = cache.status.find(s=>s.item_id===itemId && s.period_key===periodKey);
+  1267→  const newVal = st ? !st.checked : true;
+  1268→  if(st){ st.checked = newVal; } else { st = {item_id:itemId, period_key:periodKey, checked:newVal}; cache.status.push(st); }
+  1269→  saveCache();
+  1270→  if(btnEl && newVal){
+  1271→    btnEl.style.setProperty("--tilt", (Math.random()*10-5)+"deg");
+  1272→    btnEl.classList.add("bump");
+  1273→    setTimeout(()=>btnEl.classList.remove("bump"), 300);
+  1274→  }
+  1275→  render();
+  1276→  try{
+  1277→    if(sb) await sb.from("checklist_status").upsert(
+  1278→      { item_id: itemId, period_key: periodKey, checked: newVal, updated_at: new Date().toISOString() },
+  1279→      { onConflict: "item_id,period_key" }
+  1280→    );
+  1281→  }catch(e){}
+  1282→}
+  1283→
+  1284→async function resetModule(moduleKey){
+  1285→  if(!confirm("Resetar o checklist de \""+MODULES[moduleKey].label+"\" agora?")) return;
+  1286→  const periodKey = periodKeyFor(moduleKey);
+  1287→  const ids = cache.items.filter(i=>i.module===moduleKey).map(i=>i.id);
+  1288→  cache.status = cache.status.filter(s=> !(ids.includes(s.item_id) && s.period_key===periodKey));
+  1289→  saveCache();
+  1290→  render();
+  1291→  toast("Resetado","warn");
+  1292→  try{
+  1293→    if(sb) for(const id of ids){
+  1294→      await sb.from("checklist_status").upsert(
+  1295→        { item_id:id, period_key:periodKey, checked:false, updated_at:new Date().toISOString() },
+  1296→        { onConflict: "item_id,period_key" }
+  1297→      );
+  1298→    }
+  1299→  }catch(e){}
+  1300→}
+  1301→
+  1302→/* ===== date helpers (for tasks on other days) ===== */
+  1303→function dateOffsetKey(baseKey, days){
+  1304→  const [y,m,d] = baseKey.split("-").map(Number);
+  1305→  const dt = new Date(y, m-1, d);
+  1306→  dt.setDate(dt.getDate()+days);
+  1307→  return dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");
+  1308→}
+  1309→function endOfWeekKey(baseKey){
+  1310→  // week ends on Sunday
+  1311→  const [y,m,d] = baseKey.split("-").map(Number);
+  1312→  const dt = new Date(y, m-1, d);
+  1313→  const dow = dt.getDay(); // 0=Sun..6=Sat
+  1314→  const daysToSunday = (7 - dow) % 7;
+  1315→  dt.setDate(dt.getDate() + daysToSunday);
+  1316→  return dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");
+  1317→}
+  1318→function formatTaskDateLabel(dayKey){
+  1319→  const today = todayKey();
+  1320→  if(dayKey === today) return "hoje";
+  1321→  if(dayKey === dateOffsetKey(today, 1)) return "amanhã";
+  1322→  if(dayKey === dateOffsetKey(today, -1)) return "ontem";
+  1323→  const [y,m,d] = dayKey.split("-").map(Number);
+  1324→  const dt = new Date(y, m-1, d);
+  1325→  return dt.toLocaleDateString('pt-BR', {weekday:'short', day:'2-digit', month:'2-digit'});
+  1326→}
+  1327→
+  1328→async function addTask(label, priority, dayKey){
+  1329→  const day = dayKey || todayKey();
+  1330→  const existing = cache.tasks.filter(t=>t.day_key===day);
+  1331→  const position = existing.length ? Math.max(...existing.map(t=>t.position))+1 : 0;
+  1332→  const row = { label, done:false, position, day_key: day, priority: priority||"media" };
+  1333→  try{
+  1334→    const { data, error } = await sb.from("tasks").insert(row).select().single();
+  1335→    if(error) throw error;
+  1336→    cache.tasks.push(data);
+  1337→  }catch(e){
+  1338→    row.id = "local-"+Date.now();
+  1339→    cache.tasks.push(row);
+  1340→  }
+  1341→  saveCache();
+  1342→  render();
+  1343→  toast("Tarefa adicionada para "+formatTaskDateLabel(day),"ok");
+  1344→}
+  1345→async function toggleTask(id){
+  1346→  const t = cache.tasks.find(x=>x.id===id);
+  1347→  if(!t) return;
+  1348→  t.done = !t.done;
+  1349→  saveCache(); render();
+  1350→  try{ if(sb) await sb.from("tasks").update({done:t.done}).eq("id", id); }catch(e){}
+  1351→}
+  1352→async function deleteTask(id){
+  1353→  cache.tasks = cache.tasks.filter(t=>t.id!==id);
+  1354→  saveCache(); render();
+  1355→  try{ if(sb) await sb.from("tasks").delete().eq("id", id); }catch(e){}
+  1356→}
+  1357→async function moveTask(id, dir){
+  1358→  const t = cache.tasks.find(x=>x.id===id);
+  1359→  if(!t) return;
+  1360→  // reorder within the SAME day as the task
+  1361→  const list = cache.tasks.filter(x=>x.day_key===t.day_key).sort((a,b)=>a.position-b.position);
+  1362→  const idx = list.findIndex(x=>x.id===id);
+  1363→  const swapIdx = idx+dir;
+  1364→  if(swapIdx<0 || swapIdx>=list.length) return;
+  1365→  const a=list[idx], b=list[swapIdx];
+  1366→  const tmp=a.position; a.position=b.position; b.position=tmp;
+  1367→  saveCache(); render();
+  1368→  try{
+  1369→    if(sb){
+  1370→      await sb.from("tasks").update({position:a.position}).eq("id", a.id);
+  1371→      await sb.from("tasks").update({position:b.position}).eq("id", b.id);
+  1372→    }
+  1373→  }catch(e){}
+  1374→}
+  1375→async function moveTaskToDay(id, newDayKey){
+  1376→  const t = cache.tasks.find(x=>x.id===id);
+  1377→  if(!t || t.day_key === newDayKey) return;
+  1378→  const existing = cache.tasks.filter(x=>x.day_key===newDayKey && x.id!==id);
+  1379→  const position = existing.length ? Math.max(...existing.map(x=>x.position))+1 : 0;
+  1380→  t.day_key = newDayKey;
+  1381→  t.position = position;
+  1382→  saveCache(); render();
+  1383→  try{ if(sb) await sb.from("tasks").update({day_key:newDayKey, position}).eq("id", id); }catch(e){}
+  1384→  toast("Tarefa movida para "+formatTaskDateLabel(newDayKey),"ok");
+  1385→}
+  1386→
+  1387→async function setMood(value, note){
+  1388→  const day = todayKey();
+  1389→  let m = cache.mood.find(x=>x.day_key===day);
+  1390→  if(m){ m.value=value; m.note=note; } else { m = {day_key:day, value, note}; cache.mood.push(m); }
+  1391→  saveCache();
+  1392→  try{
+  1393→    if(sb) await sb.from("mood_log").upsert({ day_key: day, value, note }, { onConflict: "day_key" });
+  1394→  }catch(e){}
+  1395→  toast("Humor salvo","ok");
+  1396→}
+  1397→
+  1398→/* water + gratitude (localStorage only) */
+  1399→function getWater(day){
+  1400→  const w = cache.water.find(x=>x.day_key===day);
+  1401→  return w ? w.count : 0;
+  1402→}
+  1403→function setWater(count){
+  1404→  const day = todayKey();
+  1405→  let w = cache.water.find(x=>x.day_key===day);
+  1406→  if(w){ w.count = count; } else { cache.water.push({day_key:day, count}); }
+  1407→  saveCache();
+  1408→  try{ if(sb) sb.from("water_log").upsert({day_key:day, count, updated_at:new Date().toISOString()}, {onConflict:"day_key"}); }catch(e){}
+  1409→}
+  1410→function getGratitude(day){
+  1411→  const g = cache.gratitude.find(x=>x.day_key===day);
+  1412→  return g ? g.items : ["","",""];
+  1413→}
+  1414→function setGratitude(items){
+  1415→  const day = todayKey();
+  1416→  let g = cache.gratitude.find(x=>x.day_key===day);
+  1417→  if(g){ g.items = items; } else { cache.gratitude.push({day_key:day, items}); }
+  1418→  saveCache();
+  1419→  try{ if(sb) sb.from("gratitude_log").upsert({day_key:day, items, updated_at:new Date().toISOString()}, {onConflict:"day_key"}); }catch(e){}
+  1420→}
+  1421→
+  1422→/* ================== NUTRIÇÃO ================== */
+  1423→/* Water goal: auto from weight (35ml/kg) or manual override (in cups) */
+  1424→function getWaterGoalCups(){
+  1425→  const s = cache.nutritionSettings;
+  1426→  if(s.waterAutoCalc){
+  1427→    const ml = Math.max(800, s.weight * 35);  // floor 800ml safety
+  1428→    return Math.max(1, Math.round(ml / s.cupSizeMl));
+  1429→  }
+  1430→  return Math.max(1, s.waterGoalOverride || 8);
+  1431→}
+  1432→function getWaterGoalMl(){
+  1433→  return getWaterGoalCups() * cache.nutritionSettings.cupSizeMl;
+  1434→}
+  1435→function getWaterNeedMl(){
+  1436→  // raw need based on weight (for display, before rounding to cups)
+  1437→  return Math.max(800, Math.round(cache.nutritionSettings.weight * 35));
+  1438→}
+  1439→
+  1440→/* Macros: per-day grams consumed */
+  1441→function getMacros(day){
+  1442→  const m = cache.macrosLog.find(x=>x.day_key===day);
+  1443→  return m ? m : { carbs:0, protein:0, fat:0 };
+  1444→}
+  1445→function addMacro(field, grams){
+  1446→  const day = todayKey();
+  1447→  let m = cache.macrosLog.find(x=>x.day_key===day);
+  1448→  if(!m){ m = {day_key:day, carbs:0, protein:0, fat:0}; cache.macrosLog.push(m); }
+  1449→  m[field] = Math.max(0, (m[field]||0) + grams);
+  1450→  saveCache();
+  1451→  try{ if(sb) sb.from("macros_log").upsert({day_key:day, carbs:m.carbs, protein:m.protein, fat:m.fat, updated_at:new Date().toISOString()}, {onConflict:"day_key"}); }catch(e){}
+  1452→}
+  1453→function setMacro(field, grams){
+  1454→  const day = todayKey();
+  1455→  let m = cache.macrosLog.find(x=>x.day_key===day);
+  1456→  if(!m){ m = {day_key:day, carbs:0, protein:0, fat:0}; cache.macrosLog.push(m); }
+  1457→  m[field] = Math.max(0, grams);
+  1458→  saveCache();
+  1459→  try{ if(sb) sb.from("macros_log").upsert({day_key:day, carbs:m.carbs, protein:m.protein, fat:m.fat, updated_at:new Date().toISOString()}, {onConflict:"day_key"}); }catch(e){}
+  1460→}
+  1461→
+  1462→/* Pyramid: per-day portion counts per group */
+  1463→function getPyramidCounts(day){
+  1464→  const p = cache.pyramidLog.find(x=>x.day_key===day);
+  1465→  return p ? p.counts : {};
+  1466→}
+  1467→function addPyramidCount(groupId, delta){
+  1468→  const day = todayKey();
+  1469→  let p = cache.pyramidLog.find(x=>x.day_key===day);
+  1470→  if(!p){ p = {day_key:day, counts:{}}; cache.pyramidLog.push(p); }
+  1471→  p.counts[groupId] = Math.max(0, (p.counts[groupId]||0) + delta);
+  1472→  saveCache();
+  1473→  try{ if(sb) sb.from("pyramid_log").upsert({day_key:day, counts:p.counts, updated_at:new Date().toISOString()}, {onConflict:"day_key"}); }catch(e){}
+  1474→}
+  1475→function setPyramidCount(groupId, n){
+  1476→  const day = todayKey();
+  1477→  let p = cache.pyramidLog.find(x=>x.day_key===day);
+  1478→  if(!p){ p = {day_key:day, counts:{}}; cache.pyramidLog.push(p); }
+  1479→  p.counts[groupId] = Math.max(0, n);
+  1480→  saveCache();
+  1481→  try{ if(sb) sb.from("pyramid_log").upsert({day_key:day, counts:p.counts, updated_at:new Date().toISOString()}, {onConflict:"day_key"}); }catch(e){}
+  1482→}
+  1483→
+  1484→function saveNutritionSettings(newSettings){
+  1485→  cache.nutritionSettings = newSettings;
+  1486→  saveCache();
+  1487→  try{ if(sb) sb.from("nutrition_settings").upsert({id:1, settings:newSettings, updated_at:new Date().toISOString()}, {onConflict:"id"}); }catch(e){}
+  1488→}
+  1489→
+  1490→/* ================== CUSTOM MODULES ================== */
+  1491→function createCustomModule(label, accent){
+  1492→  const key = "custom_"+Date.now();
+  1493→  cache.customModules.push({ key, label, accent });
+  1494→  MODULES[key] = { label, kind:"checklist", period:"day", accent, custom:true };
+  1495→  MODULE_ORDER.splice(MODULE_ORDER.indexOf("tarefas"), 0, key);
+  1496→  saveCache();
+  1497→  try{ if(sb) sb.from("custom_modules").upsert({key, label, accent}, {onConflict:"key"}); }catch(e){}
+  1498→  render();
+  1499→  toast("Módulo criado","ok");
+  1500→}
+  1501→function deleteCustomModule(key){
+  1502→  if(!confirm("Excluir este módulo e todos os itens dele?")) return;
+  1503→  cache.customModules = cache.customModules.filter(c=>c.key!==key);
+  1504→  // collect item ids before removing them
+  1505→  const itemIds = cache.items.filter(i=>i.module===key).map(i=>i.id);
+  1506→  cache.items = cache.items.filter(i=>i.module!==key);
+  1507→  cache.status = cache.status.filter(s=> !itemIds.includes(s.item_id));
+  1508→  delete MODULES[key];
+  1509→  MODULE_ORDER = MODULE_ORDER.filter(k=>k!==key);
+  1510→  if(activeModule===key) activeModule = "resumo";
+  1511→  saveCache();
+  1512→  try{
+  1513→    if(sb){
+  1514→      sb.from("custom_modules").delete().eq("key", key);
+  1515→      if(itemIds.length){
+  1516→        sb.from("checklist_status").delete().in("item_id", itemIds);
+  1517→        sb.from("checklist_items").delete().eq("module", key);
+  1518→      }
+  1519→    }
+  1520→  }catch(e){}
+  1521→  render();
+  1522→  toast("Módulo excluído","warn");
+  1523→}
+  1524→
+  1525→/* ================== RENDER ================== */
+  1526→let activeModule = "resumo";
+  1527→
+  1528→function renderTabs(){
+  1529→  const nav = document.getElementById("tabs");
+  1530→  nav.innerHTML = "";
+  1531→  MODULE_ORDER.forEach(key=>{
+  1532→    const m = MODULES[key];
+  1533→    if(!m) return;
+  1534→    const b = document.createElement("button");
+  1535→    b.className = "tab" + (key===activeModule ? " active" : "");
+  1536→    b.innerHTML = `<span class="dot"></span>${escapeHtml(m.label)}` + (m.custom ? `<span class="tab-close" title="Excluir módulo">×</span>` : "");
+  1537→    b.onclick = (e)=>{
+  1538→      if(e.target.classList.contains("tab-close")){
+  1539→        e.stopPropagation();
+  1540→        deleteCustomModule(key);
+  1541→        return;
+  1542→      }
+  1543→      activeModule = key;
+  1544→      render();
+  1545→    };
+  1546→    nav.appendChild(b);
+  1547→  });
+  1548→  const add = document.createElement("button");
+  1549→  add.className = "add-tab";
+  1550→  add.textContent = "+";
+  1551→  add.title = "Criar novo módulo";
+  1552→  add.onclick = openCreateModuleModal;
+  1553→  nav.appendChild(add);
+  1554→}
+  1555→
+  1556→function setAccent(moduleKey){
+  1557→  const m = MODULES[moduleKey] || MODULES.resumo;
+  1558→  document.documentElement.style.setProperty("--accent", m.accent);
+  1559→  document.documentElement.style.setProperty("--accent-soft", m.accent+"22");
+  1560→}
+  1561→
+  1562→function render(){
+  1563→  renderTabs();
+  1564→  setAccent(activeModule);
+  1565→  const area = document.getElementById("moduleArea");
+  1566→  // CRITICAL FIX: always clear before rendering — prevents duplication
+  1567→  area.innerHTML = "";
+  1568→  const m = MODULES[activeModule];
+  1569→  if(!m){ renderDashboard(area); return; }
+  1570→  const wrap = document.createElement("div");
+  1571→  wrap.className = "fade-in";
+  1572→  area.appendChild(wrap);
+  1573→  if(m.kind === "dashboard") renderDashboard(wrap);
+  1574→  else if(m.kind === "checklist") renderChecklist(wrap, activeModule);
+  1575→  else if(m.kind === "tasks") renderTasks(wrap);
+  1576→  else if(m.kind === "mental_humor") renderMentalHumor(wrap);
+  1577→  else if(m.kind === "history") renderHistory(wrap);
+  1578→  updateFooter();
+  1579→}
+  1580→
+  1581→function renderChecklist(area, moduleKey){
+  1582→  const m = MODULES[moduleKey];
+  1583→  const periodKey = periodKeyFor(moduleKey);
+  1584→  const items = cache.items.filter(i=>i.module===moduleKey && i.active).sort((a,b)=>a.position-b.position);
+  1585→  const checkedCount = items.filter(i=>{
+  1586→    const st = cache.status.find(s=>s.item_id===i.id && s.period_key===periodKey);
+  1587→    return st && st.checked;
+  1588→  }).length;
+  1589→  const pct = items.length ? Math.round(checkedCount/items.length*100) : 0;
+  1590→
+  1591→  const card = document.createElement("div");
+  1592→  card.className = "card";
+  1593→  card.innerHTML = `
+  1594→    <div class="module-head">
+  1595→      <div>
+  1596→        <h2>${escapeHtml(m.label)}</h2>
+  1597→        <span class="period">${m.period==="week" ? "semana "+periodKey.split("-W")[1] : formatDateLabel()}</span>
+  1598→      </div>
+  1599→      <span class="frac">${checkedCount}/${items.length}</span>
+  1600→    </div>
+  1601→    <div class="bar"><div style="width:${pct}%"></div></div>
+  1602→    <ul class="items" id="list-${moduleKey}"></ul>
+  1603→    ${items.length===0 ? '<p class="empty">Nenhum item ainda. Adicione abaixo.</p>' : ""}
+  1604→    <div class="row-actions">
+  1605→      <button class="btn" id="editBtn-${moduleKey}">${editMode[moduleKey] ? "Concluir edição" : "Editar itens"}</button>
+  1606→      <button class="btn ghost" id="resetBtn-${moduleKey}">Resetar ${m.period==="week"?"semana":"dia"}</button>
+  1607→    </div>
+  1608→    ${editMode[moduleKey] ? `<div class="add-row"><input type="text" id="newItem-${moduleKey}" placeholder="Novo item..."><button class="btn primary" id="addBtn-${moduleKey}">Add</button></div>` : ""}
+  1609→  `;
+  1610→  area.appendChild(card);
+  1611→
+  1612→  const list = card.querySelector(`#list-${moduleKey}`);
+  1613→  items.forEach(it=>{
+  1614→    const st = cache.status.find(s=>s.item_id===it.id && s.period_key===periodKey);
+  1615→    const checked = st && st.checked;
+  1616→    const li = document.createElement("li");
+  1617→    li.innerHTML = `
+  1618→      <button class="stamp ${checked?'checked':''}" aria-label="marcar">${checked?'OK':''}</button>
+  1619→      <span class="item-label ${checked?'done':''}">${escapeHtml(it.label)}</span>
+  1620→      ${editMode[moduleKey] ? `<div class="edit-controls">
+  1621→        <button data-act="up" aria-label="subir">↑</button>
+  1622→        <button data-act="down" aria-label="descer">↓</button>
+  1623→        <button data-act="edit" aria-label="editar">✎</button>
+  1624→        <button data-act="del" aria-label="excluir">✕</button>
+  1625→      </div>` : ""}
+  1626→    `;
+  1627→    li.querySelector(".stamp").onclick = (e)=> toggleCheck(it.id, periodKey, e.currentTarget);
+  1628→    if(editMode[moduleKey]){
+  1629→      li.querySelector('[data-act="up"]').onclick = ()=> moveItem(moduleKey, it.id, -1);
+  1630→      li.querySelector('[data-act="down"]').onclick = ()=> moveItem(moduleKey, it.id, 1);
+  1631→      li.querySelector('[data-act="edit"]').onclick = ()=>{
+  1632→        const novo = prompt("Editar item:", it.label);
+  1633→        if(novo && novo.trim()) editItemLabel(it.id, novo.trim());
+  1634→      };
+  1635→      li.querySelector('[data-act="del"]').onclick = ()=>{
+  1636→        if(confirm("Remover este item?")) deleteItem(it.id);
+  1637→      };
+  1638→    }
+  1639→    list.appendChild(li);
+  1640→  });
+  1641→
+  1642→  card.querySelector(`#editBtn-${moduleKey}`).onclick = ()=>{
+  1643→    editMode[moduleKey] = !editMode[moduleKey];
+  1644→    render();
+  1645→  };
+  1646→  card.querySelector(`#resetBtn-${moduleKey}`).onclick = ()=> resetModule(moduleKey);
+  1647→  const addBtn = card.querySelector(`#addBtn-${moduleKey}`);
+  1648→  if(addBtn){
+  1649→    const input = card.querySelector(`#newItem-${moduleKey}`);
+  1650→    const submit = ()=>{
+  1651→      const v = input.value.trim();
+  1652→      if(v){ addItem(moduleKey, v); input.value=""; }
+  1653→    };
+  1654→    addBtn.onclick = submit;
+  1655→    input.onkeydown = (e)=>{ if(e.key==="Enter") submit(); };
+  1656→  }
+  1657→}
+  1658→
+  1659→function renderTasks(area){
+  1660→  const today = todayKey();
+  1661→  const tomorrow = dateOffsetKey(today, 1);
+  1662→  const eow = endOfWeekKey(today);
+  1663→  const allTasks = cache.tasks.slice();
+  1664→  const prioColor = { alta:"#B5566B", media:"#D6A23C", baixa:"#6B7A3A" };
+  1665→
+  1666→  // group definitions — order matters (top to bottom)
+  1667→  const groups = [
+  1668→    { key:"atrasadas", label:"⏰ Atrasadas", cls:"overdue",
+  1669→      filter: t => t.day_key < today && !t.done },
+  1670→    { key:"hoje", label:"📍 Hoje", cls:"today",
+  1671→      filter: t => t.day_key === today },
+  1672→    { key:"amanha", label:"➡ Amanhã", cls:"",
+  1673→      filter: t => t.day_key === tomorrow },
+  1674→    { key:"semana", label:"🗓 Esta semana", cls:"",
+  1675→      filter: t => t.day_key > tomorrow && t.day_key <= eow },
+  1676→    { key:"proximas", label:"📅 Próximas", cls:"",
+  1677→      filter: t => t.day_key > eow },
+  1678→    { key:"concluidas", label:"✓ Concluídas (anteriores)", cls:"done-sec",
+  1679→      filter: t => t.day_key < today && t.done },
+  1680→  ];
+  1681→
+  1682→  // compute group contents
+  1683→  const grouped = groups.map(g => ({
+  1684→    ...g,
+  1685→    tasks: allTasks.filter(g.filter).sort((a,b)=>{
+  1686→      if(a.day_key !== b.day_key) return a.day_key < b.day_key ? -1 : 1;
+  1687→      return a.position - b.position;
+  1688→    }),
+  1689→  })).filter(g => g.tasks.length > 0);
+  1690→
+  1691→  // today's progress (for the hero bar)
+  1692→  const todayTasks = allTasks.filter(t => t.day_key === today);
+  1693→  const todayDone = todayTasks.filter(t => t.done).length;
+  1694→  const totalOpen = allTasks.filter(t => !t.done).length;
+  1695→
+  1696→  const card = document.createElement("div");
+  1697→  card.className = "card";
+  1698→  card.innerHTML = `
+  1699→    <div class="module-head">
+  1700→      <div><h2>Tarefas</h2><span class="period">${formatDateLabel()} · ${totalOpen} em aberto</span></div>
+  1701→      <span class="frac">${todayDone}/${todayTasks.length}</span>
+  1702→    </div>
+  1703→    <div class="bar"><div style="width:${todayTasks.length?Math.round(todayDone/todayTasks.length*100):0}%"></div></div>
+  1704→    <div id="taskGroups"></div>
+  1705→    ${grouped.length===0 ? '<p class="empty">Nenhuma tarefa. Adicione abaixo. 🎯</p>' : ""}
+  1706→    <div class="task-add-form">
+  1707→      <input type="text" id="newTask" placeholder="Nova tarefa..." maxlength="120">
+  1708→      <input type="date" id="newTaskDate" value="${today}">
+  1709→      <select class="priority" id="taskPriority">
+  1710→        <option value="baixa">baixa</option>
+  1711→        <option value="media" selected>média</option>
+  1712→        <option value="alta">alta</option>
+  1713→      </select>
+  1714→      <button class="btn primary" id="addTaskBtn">Add</button>
+  1715→    </div>
+  1716→    <div class="task-quick-dates" id="quickDates">
+  1717→      <button data-d="today">hoje</button>
+  1718→      <button data-d="tomorrow">amanhã</button>
+  1719→      <button data-d="+3">em 3 dias</button>
+  1720→      <button data-d="+7">próx. semana</button>
+  1721→    </div>
+  1722→  `;
+  1723→  area.appendChild(card);
+  1724→
+  1725→  // render groups
+  1726→  const groupsEl = card.querySelector("#taskGroups");
+  1727→  grouped.forEach(g => {
+  1728→    const gDone = g.tasks.filter(t=>t.done).length;
+  1729→    const gEl = document.createElement("div");
+  1730→    gEl.className = "task-group";
+  1731→    gEl.innerHTML = `<div class="task-group-head ${g.cls}"><span class="tg-label">${escapeHtml(g.label)}</span><span class="tg-count">${gDone}/${g.tasks.length}</span></div>`;
+  1732→    const ul = document.createElement("ul");
+  1733→    ul.className = "items";
+  1734→    g.tasks.forEach(t => {
+  1735→      const li = document.createElement("li");
+  1736→      li.className = "task-row";
+  1737→      const isOverdue = t.day_key < today && !t.done;
+  1738→      const isToday = t.day_key === today;
+  1739→      const dateCls = isOverdue ? "overdue" : (isToday ? "today" : "");
+  1740→      li.innerHTML = `
+  1741→        <button class="stamp ${t.done?'checked':''}" aria-label="marcar">${t.done?'OK':''}</button>
+  1742→        <span class="item-label ${t.done?'done':''}">${escapeHtml(t.label)}</span>
+  1743→        <label class="task-date-pill ${dateCls}" title="mudar data">
+  1744→          ${escapeHtml(formatTaskDateLabel(t.day_key))}
+  1745→          <input type="date" value="${t.day_key}" data-task="${t.id}">
+  1746→        </label>
+  1747→        <span class="pill" style="background:${prioColor[t.priority]||'#6B5D4D'}">${escapeHtml(t.priority)}</span>
+  1748→        <div class="edit-controls">
+  1749→          <button data-act="up" aria-label="subir">↑</button>
+  1750→          <button data-act="down" aria-label="descer">↓</button>
+  1751→          <button data-act="del" aria-label="excluir">✕</button>
+  1752→        </div>
+  1753→      `;
+  1754→      li.querySelector(".stamp").onclick = (e)=>{
+  1755→        toggleTask(t.id);
+  1756→        e.currentTarget.classList.add("bump");
+  1757→        setTimeout(()=>e.currentTarget.classList.remove("bump"),300);
+  1758→      };
+  1759→      li.querySelector('[data-act="up"]').onclick = ()=> moveTask(t.id, -1);
+  1760→      li.querySelector('[data-act="down"]').onclick = ()=> moveTask(t.id, 1);
+  1761→      li.querySelector('[data-act="del"]').onclick = ()=>{ if(confirm("Remover tarefa?")) deleteTask(t.id); };
+  1762→      // date pill → open native date picker
+  1763→      const dateInput = li.querySelector('input[type=date]');
+  1764→      li.querySelector('.task-date-pill').onclick = (e)=>{
+  1765→        if(e.target === dateInput) return; // let the input handle its own click
+  1766→        e.preventDefault();
+  1767→        if(dateInput.showPicker) dateInput.showPicker();
+  1768→        else dateInput.click();
+  1769→      };
+  1770→      dateInput.onchange = ()=>{
+  1771→        if(dateInput.value && dateInput.value !== t.day_key){
+  1772→          moveTaskToDay(t.id, dateInput.value);
+  1773→        }
+  1774→      };
+  1775→      ul.appendChild(li);
+  1776→    });
+  1777→    gEl.appendChild(ul);
+  1778→    groupsEl.appendChild(gEl);
+  1779→  });
+  1780→
+  1781→  // add form
+  1782→  const addBtn = card.querySelector("#addTaskBtn");
+  1783→  const input = card.querySelector("#newTask");
+  1784→  const dateInput = card.querySelector("#newTaskDate");
+  1785→  const prio = card.querySelector("#taskPriority");
+  1786→  const submit = ()=>{
+  1787→    const v = input.value.trim();
+  1788→    if(v){ addTask(v, prio.value, dateInput.value || today); input.value=""; }
+  1789→  };
+  1790→  addBtn.onclick = submit;
+  1791→  input.onkeydown = (e)=>{ if(e.key==="Enter") submit(); };
+  1792→
+  1793→  // quick date buttons
+  1794→  const quickEl = card.querySelector("#quickDates");
+  1795→  const setActive = (key) => {
+  1796→    quickEl.querySelectorAll("button").forEach(b=>b.classList.toggle("active", b.dataset.d===key));
+  1797→  };
+  1798→  setActive("today");
+  1799→  quickEl.querySelectorAll("button").forEach(b=>{
+  1800→    b.onclick = ()=>{
+  1801→      const d = b.dataset.d;
+  1802→      let key;
+  1803→      if(d==="today") key = today;
+  1804→      else if(d==="tomorrow") key = tomorrow;
+  1805→      else if(d.startsWith("+")) key = dateOffsetKey(today, parseInt(d.slice(1),10));
+  1806→      if(key){ dateInput.value = key; setActive(d); }
+  1807→    };
+  1808→  });
+  1809→  dateInput.onchange = ()=>{ setActive(null); };
+  1810→}
+  1811→
+  1812→/* ============ MERGED MENTAL + HUMOR VIEW ============ */
+  1813→function renderMentalHumor(area){
+  1814→  const moduleKey = "bemestar";
+  1815→  const m = MODULES[moduleKey];
+  1816→  const periodKey = periodKeyFor(moduleKey);
+  1817→  const day = todayKey();
+  1818→  const items = cache.items.filter(i=>i.module===moduleKey && i.active).sort((a,b)=>a.position-b.position);
+  1819→  const checkedCount = items.filter(i=>{
+  1820→    const st = cache.status.find(s=>s.item_id===i.id && s.period_key===periodKey);
+  1821→    return st && st.checked;
+  1822→  }).length;
+  1823→  const pct = items.length ? Math.round(checkedCount/items.length*100) : 0;
+  1824→  const current = cache.mood.find(x=>x.day_key===day);
+  1825→
+  1826→  /* --- Card 1: Mental checklist --- */
+  1827→  const c1 = document.createElement("div");
+  1828→  c1.className = "card";
+  1829→  c1.innerHTML = `
+  1830→    <div class="module-head">
+  1831→      <div><h2>Bem-estar mental</h2><span class="period">${formatDateLabel()}</span></div>
+  1832→      <span class="frac">${checkedCount}/${items.length}</span>
+  1833→    </div>
+  1834→    <div class="bar"><div style="width:${pct}%"></div></div>
+  1835→    <ul class="items" id="list-${moduleKey}"></ul>
+  1836→    ${items.length===0 ? '<p class="empty">Nenhum item ainda.</p>' : ""}
+  1837→    <div class="row-actions">
+  1838→      <button class="btn" id="editBtn-${moduleKey}">${editMode[moduleKey] ? "Concluir edição" : "Editar itens"}</button>
+  1839→    </div>
+  1840→    ${editMode[moduleKey] ? `<div class="add-row"><input type="text" id="newItem-${moduleKey}" placeholder="Novo item..."><button class="btn primary" id="addBtn-${moduleKey}">Add</button></div>` : ""}
+  1841→  `;
+  1842→  area.appendChild(c1);
+  1843→
+  1844→  const list = c1.querySelector(`#list-${moduleKey}`);
+  1845→  items.forEach(it=>{
+  1846→    const st = cache.status.find(s=>s.item_id===it.id && s.period_key===periodKey);
+  1847→    const checked = st && st.checked;
+  1848→    const li = document.createElement("li");
+  1849→    li.innerHTML = `
+  1850→      <button class="stamp ${checked?'checked':''}" aria-label="marcar">${checked?'OK':''}</button>
+  1851→      <span class="item-label ${checked?'done':''}">${escapeHtml(it.label)}</span>
+  1852→      ${editMode[moduleKey] ? `<div class="edit-controls">
+  1853→        <button data-act="up">↑</button>
+  1854→        <button data-act="down">↓</button>
+  1855→        <button data-act="edit">✎</button>
+  1856→        <button data-act="del">✕</button>
+  1857→      </div>` : ""}
+  1858→    `;
+  1859→    li.querySelector(".stamp").onclick = (e)=> toggleCheck(it.id, periodKey, e.currentTarget);
+  1860→    if(editMode[moduleKey]){
+  1861→      li.querySelector('[data-act="up"]').onclick = ()=> moveItem(moduleKey, it.id, -1);
+  1862→      li.querySelector('[data-act="down"]').onclick = ()=> moveItem(moduleKey, it.id, 1);
+  1863→      li.querySelector('[data-act="edit"]').onclick = ()=>{
+  1864→        const novo = prompt("Editar item:", it.label);
+  1865→        if(novo && novo.trim()) editItemLabel(it.id, novo.trim());
+  1866→      };
+  1867→      li.querySelector('[data-act="del"]').onclick = ()=>{
+  1868→        if(confirm("Remover este item?")) deleteItem(it.id);
+  1869→      };
+  1870→    }
+  1871→    list.appendChild(li);
+  1872→  });
+  1873→  c1.querySelector(`#editBtn-${moduleKey}`).onclick = ()=>{ editMode[moduleKey] = !editMode[moduleKey]; render(); };
+  1874→  const addBtn = c1.querySelector(`#addBtn-${moduleKey}`);
+  1875→  if(addBtn){
+  1876→    const input = c1.querySelector(`#newItem-${moduleKey}`);
+  1877→    const submit = ()=>{ const v = input.value.trim(); if(v){ addItem(moduleKey, v); input.value=""; } };
+  1878→    addBtn.onclick = submit;
+  1879→    input.onkeydown = (e)=>{ if(e.key==="Enter") submit(); };
+  1880→  }
+  1881→
+  1882→  /* --- Card 2: Humor --- */
+  1883→  const c2 = document.createElement("div");
+  1884→  c2.className = "card";
+  1885→  c2.innerHTML = `
+  1886→    <div class="module-head"><div><h2>Humor do dia</h2><span class="period">${formatDateLabel()}</span></div></div>
+  1887→    <div class="mood-grid" id="moodGrid"></div>
+  1888→    <textarea class="note" id="moodNote" placeholder="Algo que queira anotar sobre hoje (opcional)">${current ? escapeHtml(current.note||"") : ""}</textarea>
+  1889→    <div class="row-actions"><button class="btn primary" id="saveMood">Salvar humor</button></div>
+  1890→  `;
+  1891→  area.appendChild(c2);
+  1892→  const grid = c2.querySelector("#moodGrid");
+  1893→  let selected = current ? current.value : null;
+  1894→  MOOD_OPTIONS.forEach(o=>{
+  1895→    const b = document.createElement("button");
+  1896→    b.textContent = o.e;
+  1897→    b.title = o.label;
+  1898→    if(selected===o.v) b.classList.add("selected");
+  1899→    b.onclick = ()=>{
+  1900→      selected=o.v;
+  1901→      grid.querySelectorAll("button").forEach(x=>x.classList.remove("selected"));
+  1902→      b.classList.add("selected");
+  1903→    };
+  1904→    grid.appendChild(b);
+  1905→  });
+  1906→  c2.querySelector("#saveMood").onclick = ()=>{
+  1907→    if(!selected){ toast("Escolha um humor primeiro","warn"); return; }
+  1908→    setMood(selected, c2.querySelector("#moodNote").value.trim());
+  1909→    render();
+  1910→  };
+  1911→
+  1912→  /* --- Card 3: Hidratação configurável --- */
+  1913→  const waterGoal = getWaterGoalCups();
+  1914→  const water = getWater(day);
+  1915→  const waterMl = water * cache.nutritionSettings.cupSizeMl;
+  1916→  const waterNeedMl = getWaterNeedMl();
+  1917→  const waterPct = waterGoal ? Math.min(100, Math.round(water/waterGoal*100)) : 0;
+  1918→  const c3 = document.createElement("div");
+  1919→  c3.className = "card";
+  1920→  // ring SVG (circumference for r=36 → 2*PI*36 ≈ 226)
+  1921→  const RING_C = 2 * Math.PI * 36;
+  1922→  const ringOffset = RING_C * (1 - waterPct/100);
+  1923→  c3.innerHTML = `
+  1924→    <div class="module-head">
+  1925→      <div><h2>Hidratação</h2><span class="period">${cache.nutritionSettings.waterAutoCalc ? "meta automática (peso)" : "meta manual"}</span></div>
+  1926→      <button class="btn ghost" id="waterConfigBtn" style="padding:5px 10px;font-size:12px;">⚙ Configurar</button>
+  1927→    </div>
+  1928→    <div class="water-display">
+  1929→      <div class="water-ring">
+  1930→        <svg viewBox="0 0 84 84">
+  1931→          <circle class="ring-bg" cx="42" cy="42" r="36"/>
+  1932→          <circle class="ring-fg" cx="42" cy="42" r="36" stroke-dasharray="${RING_C}" stroke-dashoffset="${ringOffset}"/>
+  1933→        </svg>
+  1934→        <div class="ring-center"><b>${water}</b><small>/${waterGoal} copos</small></div>
+  1935→      </div>
+  1936→      <div class="water-info-block">
+  1937→        <div class="need">Você precisa de <b>${waterGoal} copos</b> (${getWaterGoalMl()} ml) por dia.</div>
+  1938→        <div class="ml">Tomou: ${water} copos · ${waterMl} ml de ${getWaterGoalMl()} ml</div>
+  1939→        ${water >= waterGoal ? '<div class="ml" style="color:#5C7A3A;font-weight:700;">✓ Meta de hidratação atingida!</div>' : `<div class="ml">Faltam: ${waterGoal-water} copos (${(waterGoal-water)*cache.nutritionSettings.cupSizeMl} ml)</div>`}
+  1940→        <div class="ml" style="margin-top:4px;opacity:.7;">base: ${cache.nutritionSettings.weight} kg × 35 ml = ${waterNeedMl} ml/dia</div>
+  1941→      </div>
+  1942→    </div>
+  1943→    <div class="water-cups-wrap" id="waterCups"></div>
+  1944→    <div class="water-quick">
+  1945→      <button class="btn" data-w="+1">+1 copo</button>
+  1946→      <button class="btn" data-w="-1">−1</button>
+  1947→      <button class="btn ghost" data-w="0">Zerar</button>
+  1948→    </div>
+  1949→  `;
+  1950→  area.appendChild(c3);
+  1951→  const cupsWrap = c3.querySelector("#waterCups");
+  1952→  // render dynamic number of cups based on goal (cap at 16 for layout sanity)
+  1953→  const cupDisplay = Math.min(16, Math.max(waterGoal, water));
+  1954→  for(let i=1;i<=cupDisplay;i++){
+  1955→    const cup = document.createElement("button");
+  1956→    cup.className = "water-cup" + (i<=water ? " filled" : "");
+  1957→    cup.setAttribute("aria-label","copo "+i);
+  1958→    if(i > waterGoal){
+  1959→      cup.style.borderColor = "var(--line)";
+  1960→      cup.style.opacity = "0.5";
+  1961→      cup.title = "além da meta";
+  1962→    }
+  1963→    cup.onclick = ()=>{
+  1964→      const cur = getWater(day);
+  1965→      const next = (i<=cur) ? i-1 : i;
+  1966→      setWater(next);
+  1967→      render();
+  1968→    };
+  1969→    cupsWrap.appendChild(cup);
+  1970→  }
+  1971→  if(cupDisplay < water){
+  1972→    const more = document.createElement("span");
+  1973→    more.className = "small-note";
+  1974→    more.style.alignSelf = "center";
+  1975→    more.textContent = "+"+(water-cupDisplay)+" copos";
+  1976→    cupsWrap.appendChild(more);
+  1977→  }
+  1978→  c3.querySelectorAll(".water-quick button").forEach(btn=>{
+  1979→    btn.onclick = ()=>{
+  1980→      const w = btn.dataset.w;
+  1981→      const cur = getWater(day);
+  1982→      if(w==="0") setWater(0);
+  1983→      else setWater(Math.max(0, cur + parseInt(w,10)));
+  1984→      render();
+  1985→    };
+  1986→  });
+  1987→  c3.querySelector("#waterConfigBtn").onclick = openNutritionSettingsModal;
+  1988→
+  1989→  /* --- Card 4: Macros (carboidratos + proteína + gordura) --- */
+  1990→  const macros = getMacros(day);
+  1991→  const macroCfg = cache.nutritionSettings.macros;
+  1992→  const macroMeta = [
+  1993→    { key:"carbs",   label:"Carboidratos", color:"#D6A23C" },
+  1994→    { key:"protein", label:"Proteínas",    color:"#C1502E" },
+  1995→    { key:"fat",     label:"Gorduras",     color:"#9C6B2E" },
+  1996→  ];
+  1997→  const c4 = document.createElement("div");
+  1998→  c4.className = "card";
+  1999→  c4.innerHTML = `
+  2000→    <div class="module-head">
+  2001→      <div><h2>Macros</h2><span class="period">meta vs consumido (g)</span></div>
+  2002→      <button class="btn ghost" id="macroConfigBtn" style="padding:5px 10px;font-size:12px;">⚙</button>
+  2003→    </div>
+  2004→    <div id="macroRows"></div>
+  2005→    <div class="macro-quick-btns" id="carbQuick"></div>
+  2006→    <div class="macro-add-row">
+  2007→      <select id="macroSelect">
+  2008→        <option value="carbs">Carboidratos</option>
+  2009→        <option value="protein">Proteínas</option>
+  2010→        <option value="fat">Gorduras</option>
+  2011→      </select>
+  2012→      <input type="number" id="macroGrams" placeholder="g" min="0" step="1" value="15">
+  2013→      <button class="btn primary" id="macroAdd" style="padding:7px 12px;font-size:12px;">+ Adicionar</button>
+  2014→    </div>
+  2015→  `;
+  2016→  area.appendChild(c4);
+  2017→  const macroRowsEl = c4.querySelector("#macroRows");
+  2018→  macroMeta.forEach(mm=>{
+  2019→    const goal = macroCfg[mm.key].goal;
+  2020→    const cons = macros[mm.key] || 0;
+  2021→    const pct = goal ? Math.min(100, Math.round(cons/goal*100)) : 0;
+  2022→    const row = document.createElement("div");
+  2023→    row.className = "macro-row";
+  2024→    row.innerHTML = `
+  2025→      <span class="macro-dot" style="background:${mm.color}"></span>
+  2026→      <span class="macro-label">${escapeHtml(mm.label)}</span>
+  2027→      <div class="macro-bar"><div style="width:${pct}%; background:${mm.color}"></div></div>
+  2028→      <span class="macro-frac"><b>${cons}</b>/${goal}g</span>
+  2029→      <div class="stepper">
+  2030→        <button data-m="${mm.key}" data-d="-5" aria-label="menos 5">−</button>
+  2031→        <button data-m="${mm.key}" data-d="5" aria-label="mais 5">+</button>
+  2032→      </div>
+  2033→    `;
+  2034→    row.querySelectorAll(".stepper button").forEach(b=>{
+  2035→      b.onclick = ()=>{ addMacro(b.dataset.m, parseInt(b.dataset.d,10)); render(); };
+  2036→    });
+  2037→    macroRowsEl.appendChild(row);
+  2038→  });
+  2039→  // quick-add buttons for carbs (most common)
+  2040→  const carbQuick = c4.querySelector("#carbQuick");
+  2041→  [5, 10, 15, 25, 40].forEach(g=>{
+  2042→    const b = document.createElement("button");
+  2043→    b.textContent = "+"+g+"g carb";
+  2044→    b.onclick = ()=>{ addMacro("carbs", g); toast("+"+g+"g carboidratos","ok"); render(); };
+  2045→    carbQuick.appendChild(b);
+  2046→  });
+  2047→  c4.querySelector("#macroAdd").onclick = ()=>{
+  2048→    const sel = c4.querySelector("#macroSelect").value;
+  2049→    const g = parseInt(c4.querySelector("#macroGrams").value, 10);
+  2050→    if(!g || g<=0){ toast("Informe gramas válidas","warn"); return; }
+  2051→    addMacro(sel, g);
+  2052→    render();
+  2053→  };
+  2054→  c4.querySelector("#macroGrams").onkeydown = (e)=>{ if(e.key==="Enter") c4.querySelector("#macroAdd").click(); };
+  2055→  c4.querySelector("#macroConfigBtn").onclick = openNutritionSettingsModal;
+  2056→
+  2057→  /* --- Card 5: Pirâmide alimentar --- */
+  2058→  const groups = cache.nutritionSettings.pyramidGroups;
+  2059→  const pyCounts = getPyramidCounts(day);
+  2060→  // total portions goal + consumed
+  2061→  const totalGoal = groups.reduce((s,g)=>s+g.goal,0);
+  2062→  const totalCons = groups.reduce((s,g)=>s+(pyCounts[g.id]||0),0);
+  2063→  const c5 = document.createElement("div");
+  2064→  c5.className = "card";
+  2065→  c5.innerHTML = `
+  2066→    <div class="module-head">
+  2067→      <div><h2>Pirâmide alimentar</h2><span class="period">${totalCons}/${totalGoal} porções hoje</span></div>
+  2068→      <button class="btn ghost" id="pyramidConfigBtn" style="padding:5px 10px;font-size:12px;">⚙</button>
+  2069→    </div>
+  2070→    <div class="pyramid" id="pyramid"></div>
+  2071→    <p class="pyramid-legend">Toque em um grupo para registrar uma porção consumida</p>
+  2072→    <div class="pyramid-actions">
+  2073→      <button class="btn ghost" id="pyramidReset">Zerar dia</button>
+  2074→      <button class="btn" id="pyramidUndo">− última porção</button>
+  2075→    </div>
+  2076→  `;
+  2077→  area.appendChild(c5);
+  2078→  const pyEl = c5.querySelector("#pyramid");
+  2079→  // layers from top (smallest, index 0) to bottom (largest, last)
+  2080→  // width scales from 40% (top) to 100% (bottom)
+  2081→  const nGroups = groups.length;
+  2082→  groups.forEach((g, idx)=>{
+  2083→    const cons = pyCounts[g.id] || 0;
+  2084→    const pct = g.goal ? Math.min(100, Math.round(cons/g.goal*100)) : 0;
+  2085→    const widthPct = 40 + (idx/(Math.max(1,nGroups-1))) * 60;  // 40% → 100%
+  2086→    const layer = document.createElement("div");
+  2087→    layer.className = "pyramid-layer";
+  2088→    layer.setAttribute("role", "button");
+  2089→    layer.setAttribute("tabindex", "0");
+  2090→    layer.setAttribute("aria-label", g.label + ": " + cons + " de " + g.goal + " porções. Toque para adicionar.");
+  2091→    layer.style.width = widthPct + "%";
+  2092→    layer.style.background = g.color;
+  2093→    layer.title = (g.note ? g.note+" · " : "") + "meta: "+g.goal+" porções";
+  2094→    layer.innerHTML = `
+  2095→      <div class="pl-left">
+  2096→        <span class="pl-icon">${g.icon||"•"}</span>
+  2097→        <span class="pl-name">${escapeHtml(g.label)}</span>
+  2098→      </div>
+  2099→      <span class="pl-frac">${cons}/${g.goal}</span>
+  2100→      <span class="pl-edit">✎</span>
+  2101→    `;
+  2102→    layer.onclick = (e)=>{
+  2103→      if(e.target.classList.contains("pl-edit")){
+  2104→        e.stopPropagation();
+  2105→        const novo = prompt("Meta de porções para \""+g.label+"\":", g.goal);
+  2106→        if(novo !== null){
+  2107→          const n = parseInt(novo,10);
+  2108→          if(!isNaN(n) && n>=0){ g.goal = n; saveCache(); render(); }
+  2109→        }
+  2110→        return;
+  2111→      }
+  2112→      addPyramidCount(g.id, +1);
+  2113→      render();
+  2114→    };
+  2115→    layer.oncontextmenu = (e)=>{
+  2116→      e.preventDefault();
+  2117→      addPyramidCount(g.id, -1);
+  2118→      render();
+  2119→    };
+  2120→    layer.onkeydown = (e)=>{
+  2121→      if(e.key==="Enter" || e.key===" "){
+  2122→        e.preventDefault();
+  2123→        addPyramidCount(g.id, +1);
+  2124→        render();
+  2125→      }
+  2126→    };
+  2127→    pyEl.appendChild(layer);
+  2128→  });
+  2129→  c5.querySelector("#pyramidReset").onclick = ()=>{
+  2130→    if(!confirm("Zerar todas as porções de hoje?")) return;
+  2131→    groups.forEach(g=> setPyramidCount(g.id, 0));
+  2132→    render();
+  2133→  };
+  2134→  c5.querySelector("#pyramidUndo").onclick = ()=>{
+  2135→    // remove 1 from the group with highest count
+  2136→    let best=null, bestN=0;
+  2137→    groups.forEach(g=>{
+  2138→      const n = pyCounts[g.id]||0;
+  2139→      if(n>bestN){ bestN=n; best=g; }
+  2140→    });
+  2141→    if(best){ addPyramidCount(best.id, -1); render(); }
+  2142→  };
+  2143→  c5.querySelector("#pyramidConfigBtn").onclick = openNutritionSettingsModal;
+  2144→
+  2145→  /* --- Card 6: Gratidão --- */
+  2146→  const grat = getGratitude(day);
+  2147→  const c6 = document.createElement("div");
+  2148→  c6.className = "card";
+  2149→  c6.innerHTML = `
+  2150→    <div class="module-head"><div><h2>Gratidão</h2><span class="period">3 coisas boas de hoje</span></div></div>
+  2151→    <div class="grat-list">
+  2152→      ${[0,1,2].map(i=>`<div class="grat-item"><span class="num">${i+1}</span><input type="text" id="grat-${i}" placeholder="Sou grato por..." value="${escapeHtml(grat[i]||"")}"></div>`).join("")}
+  2153→    </div>
+  2154→    <div class="row-actions"><button class="btn primary" id="saveGrat">Salvar gratidão</button></div>
+  2155→  `;
+  2156→  area.appendChild(c6);
+  2157→  c6.querySelector("#saveGrat").onclick = ()=>{
+  2158→    const items = [0,1,2].map(i=>c6.querySelector(`#grat-${i}`).value.trim());
+  2159→    setGratitude(items);
+  2160→    toast("Gratidão salva","ok");
+  2161→    render();
+  2162→  };
+  2163→}
+  2164→
+  2165→/* ============ DASHBOARD / RESUMO ============ */
+  2166→function renderDashboard(area){
+  2167→  const day = todayKey();
+  2168→  // overall today completion across all day-checklists
+  2169→  const dayModules = MODULE_ORDER.filter(k=>MODULES[k] && MODULES[k].kind==="checklist" && MODULES[k].period==="day");
+  2170→  let totalItems=0, totalChecked=0;
+  2171→  dayModules.forEach(key=>{
+  2172→    const items = cache.items.filter(i=>i.module===key && i.active);
+  2173→    totalItems += items.length;
+  2174→    items.forEach(it=>{
+  2175→      const st = cache.status.find(s=>s.item_id===it.id && s.period_key===day);
+  2176→      if(st && st.checked) totalChecked++;
+  2177→    });
+  2178→  });
+  2179→  const overall = totalItems ? Math.round(totalChecked/totalItems*100) : 0;
+  2180→
+  2181→  const hero = document.createElement("div");
+  2182→  hero.className = "card dash-hero";
+  2183→  hero.innerHTML = `
+  2184→    <div class="module-head">
+  2185→      <div><h2>Seu dia</h2><span class="period">${formatDateLabel()}</span></div>
+  2186→    </div>
+  2187→    <div class="big-pct">${overall}%</div>
+  2188→    <div class="sub">${totalChecked} de ${totalItems} hábitos concluídos</div>
+  2189→    <div class="bar"><div style="width:${overall}%"></div></div>
+  2190→  `;
+  2191→  area.appendChild(hero);
+  2192→
+  2193→  const grid = document.createElement("div");
+  2194→  grid.className = "dash-grid";
+  2195→  // mood
+  2196→  const mood = cache.mood.find(m=>m.day_key===day);
+  2197→  const moodOpt = mood ? MOOD_OPTIONS.find(o=>o.v===mood.value) : null;
+  2198→  grid.appendChild(miniCard("Humor", moodOpt ? moodOpt.e : "—", moodOpt ? moodOpt.label : "sem registro"));
+  2199→  // water (dynamic goal)
+  2200→  const water = getWater(day);
+  2201→  const wGoal = getWaterGoalCups();
+  2202→  const wPct = wGoal ? Math.round(water/wGoal*100) : 0;
+  2203→  grid.appendChild(miniCard("Água", water+"<small>/"+wGoal+"</small>", wPct+"% · "+(water*cache.nutritionSettings.cupSizeMl)+"ml"));
+  2204→  // carbs (macros)
+  2205→  const macros = getMacros(day);
+  2206→  const carbsGoal = cache.nutritionSettings.macros.carbs.goal;
+  2207→  const carbsPct = carbsGoal ? Math.round(macros.carbs/carbsGoal*100) : 0;
+  2208→  grid.appendChild(miniCard("Carboidratos", macros.carbs+"<small>g</small>", carbsPct+"% de "+carbsGoal+"g"));
+  2209→  // tasks
+  2210→  const dayTasks = cache.tasks.filter(t=>t.day_key===day);
+  2211→  const tasksDone = dayTasks.filter(t=>t.done).length;
+  2212→  grid.appendChild(miniCard("Tarefas", tasksDone+"<small>/"+dayTasks.length+"</small>", "concluídas"));
+  2213→  // pyramid portions
+  2214→  const groups = cache.nutritionSettings.pyramidGroups;
+  2215→  const pyCounts = getPyramidCounts(day);
+  2216→  const totalGoal = groups.reduce((s,g)=>s+g.goal,0);
+  2217→  const totalCons = groups.reduce((s,g)=>s+(pyCounts[g.id]||0),0);
+  2218→  grid.appendChild(miniCard("Pirâmide", totalCons+"<small>/"+totalGoal+"</small>", "porções hoje"));
+  2219→  // gratitude
+  2220→  const grat = getGratitude(day).filter(x=>x.trim()).length;
+  2221→  grid.appendChild(miniCard("Gratidão", grat+"<small>/3</small>", grat===3?"completo":"pendentes"));
+  2222→  area.appendChild(grid);
+  2223→
+  2224→  // per-module quick bars
+  2225→  const perMod = document.createElement("div");
+  2226→  perMod.className = "card";
+  2227→  perMod.innerHTML = `<div class="module-head"><div><h2>Por módulo</h2><span class="period">hoje</span></div></div><div id="perModRows"></div>`;
+  2228→  area.appendChild(perMod);
+  2229→  const rows = perMod.querySelector("#perModRows");
+  2230→  dayModules.forEach(key=>{
+  2231→    const items = cache.items.filter(i=>i.module===key && i.active);
+  2232→    const checked = items.filter(it=>{
+  2233→      const st = cache.status.find(s=>s.item_id===it.id && s.period_key===day);
+  2234→      return st && st.checked;
+  2235→    }).length;
+  2236→    const pct = items.length ? Math.round(checked/items.length*100) : 0;
+  2237→    const row = document.createElement("div");
+  2238→    row.className = "hist-row";
+  2239→    row.style.cursor = "pointer";
+  2240→    row.innerHTML = `<span class="label">${escapeHtml(MODULES[key].label)}</span><div class="track"><div style="width:${pct}%; background:${MODULES[key].accent}"></div></div><span class="pct">${pct}%</span>`;
+  2241→    row.onclick = ()=>{ activeModule = key; render(); };
+  2242→    rows.appendChild(row);
+  2243→  });
+  2244→
+  2245→  // quick actions
+  2246→  const qa = document.createElement("div");
+  2247→  qa.className = "card";
+  2248→  qa.innerHTML = `<div class="module-head"><div><h2>Acesso rápido</h2></div></div>
+  2249→    <div class="row-actions" style="margin-top:0;">
+  2250→      <button class="btn primary" id="goBemestar">Bem-estar</button>
+  2251→      <button class="btn" id="goTarefas">Tarefas</button>
+  2252→      <button class="btn ghost" id="goHist">Histórico</button>
+  2253→    </div>`;
+  2254→  area.appendChild(qa);
+  2255→  qa.querySelector("#goBemestar").onclick = ()=>{ activeModule="bemestar"; render(); };
+  2256→  qa.querySelector("#goTarefas").onclick = ()=>{ activeModule="tarefas"; render(); };
+  2257→  qa.querySelector("#goHist").onclick = ()=>{ activeModule="historico"; render(); };
+  2258→}
+  2259→function miniCard(lbl, val, sub){
+  2260→  const d = document.createElement("div");
+  2261→  d.className = "dash-mini";
+  2262→  d.innerHTML = `<div class="lbl">${escapeHtml(lbl)}</div><div class="val">${val}</div><div class="small-note" style="margin-top:2px">${escapeHtml(sub)}</div>`;
+  2263→  return d;
+  2264→}
+  2265→
+  2266→function renderHistory(area){
+  2267→  const dailyModules = MODULE_ORDER.filter(k=>MODULES[k] && MODULES[k].kind==="checklist" && MODULES[k].period==="day");
+  2268→
+  2269→  // streaks
+  2270→  const streaksCard = document.createElement("div");
+  2271→  streaksCard.className = "card hist-block";
+  2272→  streaksCard.innerHTML = `<h3>Sequência atual</h3><div class="streaks" id="streaks"></div>`;
+  2273→  area.appendChild(streaksCard);
+  2274→  const streaksEl = streaksCard.querySelector("#streaks");
+  2275→  dailyModules.forEach(key=>{
+  2276→    const streak = computeStreak(key);
+  2277→    const chip = document.createElement("div");
+  2278→    chip.className = "streak-chip";
+  2279→    chip.style.borderColor = MODULES[key].accent+"55";
+  2280→    chip.innerHTML = `<b style="color:${MODULES[key].accent}">${streak}</b>${escapeHtml(MODULES[key].label)}`;
+  2281→    streaksEl.appendChild(chip);
+  2282→  });
+  2283→
+  2284→  // completion last 7 days
+  2285→  const compCard = document.createElement("div");
+  2286→  compCard.className = "card hist-block";
+  2287→  compCard.innerHTML = `<h3>Conclusão — últimos 7 dias</h3><div id="compRows"></div>`;
+  2288→  area.appendChild(compCard);
+  2289→  const rows = compCard.querySelector("#compRows");
+  2290→  dailyModules.forEach(key=>{
+  2291→    const pct = computeCompletionPct(key, 7);
+  2292→    const row = document.createElement("div");
+  2293→    row.className = "hist-row";
+  2294→    row.innerHTML = `<span class="label">${escapeHtml(MODULES[key].label)}</span><div class="track"><div style="width:${pct}%; background:${MODULES[key].accent}"></div></div><span class="pct">${pct}%</span>`;
+  2295→    rows.appendChild(row);
+  2296→  });
+  2297→
+  2298→  // mood chart last 14 days
+  2299→  const moodCard = document.createElement("div");
+  2300→  moodCard.className = "card hist-block";
+  2301→  moodCard.innerHTML = `<h3>Humor — últimos 14 dias</h3><div class="mood-chart" id="moodChart"></div><div class="mood-chart-labels" id="moodLabels"></div>`;
+  2302→  area.appendChild(moodCard);
+  2303→  const chart = moodCard.querySelector("#moodChart");
+  2304→  const labels = moodCard.querySelector("#moodLabels");
+  2305→  const days = lastNDays(14);
+  2306→  let hasMood = false;
+  2307→  days.forEach(d=>{
+  2308→    const entry = cache.mood.find(m=>m.day_key===d);
+  2309→    const v = entry ? entry.value : 0;
+  2310→    if(entry) hasMood = true;
+  2311→    const bar = document.createElement("div");
+  2312→    bar.className = "bar2";
+  2313→    bar.style.height = (v ? v*14 : 2)+"px";
+  2314→    bar.style.background = v ? MODULES.bemestar.accent : "var(--line)";
+  2315→    bar.title = d + (entry ? " — "+MOOD_OPTIONS.find(o=>o.v===v)?.label : "");
+  2316→    chart.appendChild(bar);
+  2317→    const lab = document.createElement("span");
+  2318→    lab.textContent = d.slice(8);
+  2319→    labels.appendChild(lab);
+  2320→  });
+  2321→  if(!hasMood){
+  2322→    moodCard.querySelector("h3").insertAdjacentHTML("afterend", '<p class="empty">Sem registros de humor ainda.</p>');
+  2323→  }
+  2324→
+  2325→  // water chart last 7 days (scaled to dynamic goal)
+  2326→  const wGoal = getWaterGoalCups();
+  2327→  const waterCard = document.createElement("div");
+  2328→  waterCard.className = "card hist-block";
+  2329→  waterCard.innerHTML = `<h3>Hidratação — últimos 7 dias <span class="small-note" style="font-weight:400;">meta: ${wGoal} copos</span></h3><div class="mood-chart" id="waterChart"></div><div class="mood-chart-labels" id="waterLabels"></div>`;
+  2330→  area.appendChild(waterCard);
+  2331→  const wchart = waterCard.querySelector("#waterChart");
+  2332→  const wlabels = waterCard.querySelector("#waterLabels");
+  2333→  lastNDays(7).forEach(d=>{
+  2334→    const w = cache.water.find(x=>x.day_key===d);
+  2335→    const c = w ? w.count : 0;
+  2336→    const pct = wGoal ? Math.min(100, c/wGoal*100) : 0;
+  2337→    const bar = document.createElement("div");
+  2338→    bar.className = "bar2";
+  2339→    bar.style.height = (c ? Math.max(4, pct/100*70) : 2)+"px";
+  2340→    bar.style.background = c ? (c>=wGoal ? "#5C7A3A" : "#5BA3D0") : "var(--line)";
+  2341→    bar.title = d+" — "+c+"/"+wGoal+" copos ("+Math.round(pct)+"%)";
+  2342→    wchart.appendChild(bar);
+  2343→    const lab = document.createElement("span");
+  2344→    lab.textContent = d.slice(8);
+  2345→    wlabels.appendChild(lab);
+  2346→  });
+  2347→
+  2348→  // carbs chart last 7 days
+  2349→  const carbsGoal = cache.nutritionSettings.macros.carbs.goal;
+  2350→  const carbsCard = document.createElement("div");
+  2351→  carbsCard.className = "card hist-block";
+  2352→  carbsCard.innerHTML = `<h3>Carboidratos — últimos 7 dias <span class="small-note" style="font-weight:400;">meta: ${carbsGoal}g</span></h3><div class="mood-chart" id="carbsChart"></div><div class="mood-chart-labels" id="carbsLabels"></div>`;
+  2353→  area.appendChild(carbsCard);
+  2354→  const cchart = carbsCard.querySelector("#carbsChart");
+  2355→  const clabels = carbsCard.querySelector("#carbsLabels");
+  2356→  lastNDays(7).forEach(d=>{
+  2357→    const m = cache.macrosLog.find(x=>x.day_key===d);
+  2358→    const v = m ? (m.carbs||0) : 0;
+  2359→    const pct = carbsGoal ? Math.min(100, v/carbsGoal*100) : 0;
+  2360→    const bar = document.createElement("div");
+  2361→    bar.className = "bar2";
+  2362→    bar.style.height = (v ? Math.max(4, pct/100*70) : 2)+"px";
+  2363→    bar.style.background = v ? (v>=carbsGoal ? "#6B7A3A" : "#D6A23C") : "var(--line)";
+  2364→    bar.title = d+" — "+v+"/"+carbsGoal+"g ("+Math.round(pct)+"%)";
+  2365→    cchart.appendChild(bar);
+  2366→    const lab = document.createElement("span");
+  2367→    lab.textContent = d.slice(8);
+  2368→    clabels.appendChild(lab);
+  2369→  });
+  2370→
+  2371→  // pyramid summary last 7 days
+  2372→  const groups = cache.nutritionSettings.pyramidGroups;
+  2373→  const pyCard = document.createElement("div");
+  2374→  pyCard.className = "card hist-block";
+  2375→  let pyHtml = `<h3>Pirâmide alimentar — últimos 7 dias</h3>`;
+  2376→  groups.forEach(g=>{
+  2377→    let total = 0;
+  2378→    lastNDays(7).forEach(d=>{
+  2379→      const p = cache.pyramidLog.find(x=>x.day_key===d);
+  2380→      if(p && p.counts[g.id]) total += p.counts[g.id];
+  2381→    });
+  2382→    const weekGoal = g.goal * 7;
+  2383→    const pct = weekGoal ? Math.min(100, Math.round(total/weekGoal*100)) : 0;
+  2384→    pyHtml += `<div class="hist-row"><span class="label">${g.icon||"•"} ${escapeHtml(g.label)}</span><div class="track"><div style="width:${pct}%; background:${g.color}"></div></div><span class="pct">${total}/${weekGoal}</span></div>`;
+  2385→  });
+  2386→  pyCard.innerHTML = pyHtml;
+  2387→  area.appendChild(pyCard);
+  2388→
+  2389→  // tasks this week
+  2390→  const tCard = document.createElement("div");
+  2391→  tCard.className = "card hist-block";
+  2392→  const weekDays = lastNDays(7);
+  2393→  const weekTasks = cache.tasks.filter(t=>weekDays.includes(t.day_key));
+  2394→  const weekDone = weekTasks.filter(t=>t.done).length;
+  2395→  tCard.innerHTML = `<h3>Tarefas — últimos 7 dias</h3><p class="small-note">${weekDone} de ${weekTasks.length} tarefas concluídas.</p>`;
+  2396→  area.appendChild(tCard);
+  2397→}
+  2398→
+  2399→function lastNDays(n){
+  2400→  const arr = [];
+  2401→  for(let i=n-1; i>=0; i--){
+  2402→    const d = new Date();
+  2403→    d.setDate(d.getDate()-i);
+  2404→    arr.push(d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"));
+  2405→  }
+  2406→  return arr;
+  2407→}
+  2408→function computeCompletionPct(moduleKey, n){
+  2409→  const items = cache.items.filter(i=>i.module===moduleKey && i.active);
+  2410→  if(items.length===0) return 0;
+  2411→  const days = lastNDays(n);
+  2412→  let totalPossible=0, totalDone=0;
+  2413→  days.forEach(day=>{
+  2414→    items.forEach(it=>{
+  2415→      const st = cache.status.find(s=>s.item_id===it.id && s.period_key===day);
+  2416→      if(st){ totalPossible++; if(st.checked) totalDone++; }
+  2417→    });
+  2418→  });
+  2419→  if(totalPossible===0) return 0;
+  2420→  return Math.round(totalDone/totalPossible*100);
+  2421→}
+  2422→function computeStreak(moduleKey){
+  2423→  const items = cache.items.filter(i=>i.module===moduleKey && i.active);
+  2424→  if(items.length===0) return 0;
+  2425→  let streak = 0;
+  2426→  for(let i=0;i<365;i++){
+  2427→    const d = new Date();
+  2428→    d.setDate(d.getDate()-i);
+  2429→    const key = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  2430→    const allChecked = items.every(it=>{
+  2431→      const st = cache.status.find(s=>s.item_id===it.id && s.period_key===key);
+  2432→      return st && st.checked;
+  2433→    });
+  2434→    if(allChecked) streak++;
+  2435→    else break;
+  2436→  }
+  2437→  return streak;
+  2438→}
+  2439→
+  2440→function escapeHtml(s){
+  2441→  if(s===undefined||s===null) return "";
+  2442→  const div = document.createElement("div");
+  2443→  div.textContent = String(s);
+  2444→  return div.innerHTML;
+  2445→}
+  2446→function formatDateLabel(){
+  2447→  return new Date().toLocaleDateString('pt-BR',{weekday:'long', day:'2-digit', month:'short'});
+  2448→}
+  2449→
+  2450→/* ================== TOAST ================== */
+  2451→function toast(msg, kind){
+  2452→  kind = kind || "ok";
+  2453→  const wrap = document.getElementById("toastWrap");
+  2454→  const t = document.createElement("div");
+  2455→  t.className = "toast "+kind;
+  2456→  t.textContent = msg;
+  2457→  wrap.appendChild(t);
+  2458→  setTimeout(()=>{ t.remove(); }, 2600);
+  2459→}
+  2460→
+  2461→/* ================== MODAL: NUTRITION SETTINGS ================== */
+  2462→const NUTRI_COLORS = ["#C1502E","#D6A23C","#6B7A3A","#9C6B2E","#B5566B","#4A3B6B","#2E6B62","#5A7A8B","#3C6B5A","#8B5A9F"];
+  2463→const NUTRI_ICONS = ["🍞","🥩","🍎","🥬","🍭","🥛","🍚","🥚","🐟","🧀","🍩","🥦","🍌","💧","🌰"];
+  2464→function openNutritionSettingsModal(){
+  2465→  const root = document.getElementById("modalRoot");
+  2466→  const s = JSON.parse(JSON.stringify(cache.nutritionSettings)); // deep clone working copy
+  2467→  const needMl = Math.max(800, Math.round(s.weight * 35));
+  2468→  const autoCups = Math.max(1, Math.round(needMl / s.cupSizeMl));
+  2469→  root.innerHTML = `
+  2470→    <div class="modal-overlay">
+  2471→      <div class="modal nutri-modal" role="dialog" aria-modal="true">
+  2472→        <h3>Configurar nutrição</h3>
+  2473→
+  2474→        <div class="nutri-section">
+  2475→          <h4>💧 Hidratação</h4>
+  2476→          <div class="nutri-field">
+  2477→            <label>Seu peso
+  2478→              <span class="hint">usado para calcular sua necessidade de água</span>
+  2479→            </label>
+  2480→            <input type="number" id="nutWeight" value="${s.weight}" min="20" max="300" step="1">
+  2481→          </div>
+  2482→          <div class="nutri-field">
+  2483→            <label>Tamanho do copo
+  2484→              <span class="hint">ml por copo</span>
+  2485→            </label>
+  2486→            <input type="number" id="nutCupSize" value="${s.cupSizeMl}" min="50" max="1000" step="10">
+  2487→          </div>
+  2488→          <label class="nutri-toggle">
+  2489→            <input type="checkbox" id="nutAutoCalc" ${s.waterAutoCalc?'checked':''}>
+  2490→            Calcular meta automaticamente pelo peso
+  2491→          </label>
+  2492→          <div class="nutri-field" id="manualGoalRow" style="${s.waterAutoCalc?'display:none;':''}">
+  2493→            <label>Meta manual (copos)</label>
+  2494→            <input type="number" id="nutWaterGoal" value="${s.waterGoalOverride}" min="1" max="30" step="1">
+  2495→          </div>
+  2496→          <div class="nutri-calc-note" id="waterCalcNote">
+  2497→            Cálculo: <b>${s.weight} kg</b> × 35 ml = <b>${needMl} ml</b> → <b>${autoCups} copos</b> de ${s.cupSizeMl} ml
+  2498→          </div>
+  2499→        </div>
+  2500→
+  2501→        <div class="nutri-section">
+  2502→          <h4>🥗 Macros (metas em gramas)</h4>
+  2503→          <div class="nutri-field">
+  2504→            <label>Carboidratos</label>
+  2505→            <input type="number" id="nutCarbsGoal" value="${s.macros.carbs.goal}" min="0" max="2000" step="5">
+  2506→          </div>
+  2507→          <div class="nutri-field">
+  2508→            <label>Proteínas</label>
+  2509→            <input type="number" id="nutProteinGoal" value="${s.macros.protein.goal}" min="0" max="1000" step="5">
+  2510→          </div>
+  2511→          <div class="nutri-field">
+  2512→            <label>Gorduras</label>
+  2513→            <input type="number" id="nutFatGoal" value="${s.macros.fat.goal}" min="0" max="1000" step="5">
+  2514→          </div>
+  2515→        </div>
+  2516→
+  2517→        <div class="nutri-section">
+  2518→          <h4>🔺 Pirâmide alimentar</h4>
+  2519→          <p class="small-note" style="margin:0 0 8px;">Ordem: topo (modere) → base (coma mais). Arraste os itens para reordenar.</p>
+  2520→          <div class="pyramid-edit-list" id="pyrList"></div>
+  2521→          <div class="nutri-add-group">
+  2522→            <input type="text" id="newGroupName" placeholder="Novo grupo..." maxlength="28">
+  2523→            <button class="btn" id="addGroupBtn" style="padding:6px 10px;font-size:12px;">+ Grupo</button>
+  2524→          </div>
+  2525→        </div>
+  2526→
+  2527→        <div class="modal-actions">
+  2528→          <button class="btn danger" id="resetNutri">Restaurar padrão</button>
+  2529→          <button class="btn ghost" id="cancelNutri">Cancelar</button>
+  2530→          <button class="btn primary" id="saveNutri">Salvar</button>
+  2531→        </div>
+  2532→      </div>
+  2533→    </div>
+  2534→  `;
+  2535→
+  2536→  // helper to re-render the pyramid edit list from `s.pyramidGroups`
+  2537→  function renderPyrList(){
+  2538→    const list = root.querySelector("#pyrList");
+  2539→    list.innerHTML = "";
+  2540→    s.pyramidGroups.forEach((g, idx)=>{
+  2541→      const item = document.createElement("div");
+  2542→      item.className = "pyramid-edit-item";
+  2543→      item.draggable = true;
+  2544→      item.dataset.idx = idx;
+  2545→      item.innerHTML = `
+  2546→        <span class="pe-handle" title="arraste para reordenar">⠿</span>
+  2547→        <input type="text" class="pe-icon-input" value="${escapeHtml(g.icon||"")}" maxlength="2" style="width:30px;text-align:center;font-size:14px;padding:4px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);" title="ícone (emoji)">
+  2548→        <input type="color" class="pe-color" value="${g.color}" title="cor">
+  2549→        <input type="text" class="pe-label" value="${escapeHtml(g.label)}" maxlength="28" placeholder="Nome do grupo">
+  2550→        <input type="number" class="pe-goal" value="${g.goal}" min="0" max="30" step="1" title="meta de porções">
+  2551→        <button class="pe-del" title="excluir">✕</button>
+  2552→      `;
+  2553→      item.querySelector(".pe-icon-input").oninput = (e)=>{ g.icon = e.target.value; };
+  2554→      item.querySelector(".pe-color").oninput = (e)=>{ g.color = e.target.value; };
+  2555→      item.querySelector(".pe-label").oninput = (e)=>{ g.label = e.target.value; };
+  2556→      item.querySelector(".pe-goal").oninput = (e)=>{ g.goal = Math.max(0, parseInt(e.target.value,10)||0); };
+  2557→      item.querySelector(".pe-del").onclick = ()=>{
+  2558→        if(s.pyramidGroups.length<=1){ toast("Mantenha pelo menos 1 grupo","warn"); return; }
+  2559→        s.pyramidGroups.splice(idx,1);
+  2560→        renderPyrList();
+  2561→      };
+  2562→      // drag reorder
+  2563→      item.addEventListener("dragstart", (e)=>{
+  2564→        item.classList.add("dragging");
+  2565→        e.dataTransfer.setData("text/plain", idx);
+  2566→      });
+  2567→      item.addEventListener("dragend", ()=>{ item.classList.remove("dragging"); });
+  2568→      item.addEventListener("dragover", (e)=>{ e.preventDefault(); });
+  2569→      item.addEventListener("drop", (e)=>{
+  2570→        e.preventDefault();
+  2571→        const from = parseInt(e.dataTransfer.getData("text/plain"),10);
+  2572→        const to = idx;
+  2573→        if(from===to) return;
+  2574→        const moved = s.pyramidGroups.splice(from,1)[0];
+  2575→        s.pyramidGroups.splice(to,0,moved);
+  2576→        renderPyrList();
+  2577→      });
+  2578→      list.appendChild(item);
+  2579→    });
+  2580→  }
+  2581→  renderPyrList();
+  2582→
+  2583→  // add group
+  2584→  root.querySelector("#addGroupBtn").onclick = ()=>{
+  2585→    const name = root.querySelector("#newGroupName").value.trim();
+  2586→    if(!name){ toast("Dê um nome ao grupo","warn"); return; }
+  2587→    s.pyramidGroups.push({
+  2588→      id: "g_"+Date.now(),
+  2589→      label: name,
+  2590→      goal: 3,
+  2591→      color: NUTRI_COLORS[s.pyramidGroups.length % NUTRI_COLORS.length],
+  2592→      icon: NUTRI_ICONS[s.pyramidGroups.length % NUTRI_ICONS.length],
+  2593→    });
+  2594→    root.querySelector("#newGroupName").value = "";
+  2595→    renderPyrList();
+  2596→  };
+  2597→  root.querySelector("#newGroupName").onkeydown = (e)=>{ if(e.key==="Enter") root.querySelector("#addGroupBtn").click(); };
+  2598→
+  2599→  // auto-calc toggle
+  2600→  const autoChk = root.querySelector("#nutAutoCalc");
+  2601→  const manualRow = root.querySelector("#manualGoalRow");
+  2602→  const noteEl = root.querySelector("#waterCalcNote");
+  2603→  function updateWaterNote(){
+  2604→    const w = parseFloat(root.querySelector("#nutWeight").value)||70;
+  2605→    const cs = parseInt(root.querySelector("#nutCupSize").value,10)||250;
+  2606→    const ml = Math.max(800, Math.round(w*35));
+  2607→    const cups = Math.max(1, Math.round(ml/cs));
+  2608→    noteEl.innerHTML = `Cálculo: <b>${w} kg</b> × 35 ml = <b>${ml} ml</b> → <b>${cups} copos</b> de ${cs} ml`;
+  2609→  }
+  2610→  autoChk.onchange = ()=>{
+  2611→    s.waterAutoCalc = autoChk.checked;
+  2612→    manualRow.style.display = autoChk.checked ? "none" : "";
+  2613→    updateWaterNote();
+  2614→  };
+  2615→  root.querySelector("#nutWeight").oninput = updateWaterNote;
+  2616→  root.querySelector("#nutCupSize").oninput = updateWaterNote;
+  2617→
+  2618→  const close = ()=>{ root.innerHTML = ""; };
+  2619→  root.querySelector("#cancelNutri").onclick = close;
+  2620→  root.querySelector(".modal-overlay").onclick = (e)=>{ if(e.target.classList.contains("modal-overlay")) close(); };
+  2621→
+  2622→  root.querySelector("#resetNutri").onclick = ()=>{
+  2623→    if(!confirm("Restaurar todas as configurações de nutrição para o padrão? Seus registros de hoje serão mantidos.")) return;
+  2624→    const def = defaultNutritionSettings();
+  2625→    s.weight = def.weight;
+  2626→    s.cupSizeMl = def.cupSizeMl;
+  2627→    s.waterAutoCalc = def.waterAutoCalc;
+  2628→    s.waterGoalOverride = def.waterGoalOverride;
+  2629→    s.macros = def.macros;
+  2630→    s.pyramidGroups = def.pyramidGroups;
+  2631→    // update form fields
+  2632→    root.querySelector("#nutWeight").value = s.weight;
+  2633→    root.querySelector("#nutCupSize").value = s.cupSizeMl;
+  2634→    autoChk.checked = s.waterAutoCalc;
+  2635→    manualRow.style.display = s.waterAutoCalc ? "none" : "";
+  2636→    root.querySelector("#nutWaterGoal").value = s.waterGoalOverride;
+  2637→    root.querySelector("#nutCarbsGoal").value = s.macros.carbs.goal;
+  2638→    root.querySelector("#nutProteinGoal").value = s.macros.protein.goal;
+  2639→    root.querySelector("#nutFatGoal").value = s.macros.fat.goal;
+  2640→    updateWaterNote();
+  2641→    renderPyrList();
+  2642→    toast("Padrão restaurado","ok");
+  2643→  };
+  2644→
+  2645→  root.querySelector("#saveNutri").onclick = ()=>{
+  2646→    // gather values
+  2647→    s.weight = Math.max(20, Math.min(300, parseFloat(root.querySelector("#nutWeight").value)||70));
+  2648→    s.cupSizeMl = Math.max(50, Math.min(1000, parseInt(root.querySelector("#nutCupSize").value,10)||250));
+  2649→    s.waterAutoCalc = autoChk.checked;
+  2650→    s.waterGoalOverride = Math.max(1, Math.min(30, parseInt(root.querySelector("#nutWaterGoal").value,10)||8));
+  2651→    s.macros.carbs.goal = Math.max(0, parseInt(root.querySelector("#nutCarbsGoal").value,10)||0);
+  2652→    s.macros.protein.goal = Math.max(0, parseInt(root.querySelector("#nutProteinGoal").value,10)||0);
+  2653→    s.macros.fat.goal = Math.max(0, parseInt(root.querySelector("#nutFatGoal").value,10)||0);
+  2654→    // validate groups (filter empty labels)
+  2655→    s.pyramidGroups = s.pyramidGroups.filter(g=>g.label && g.label.trim());
+  2656→    saveNutritionSettings(s);
+  2657→    close();
+  2658→    render();
+  2659→    toast("Nutrição configurada","ok");
+  2660→  };
+  2661→}
+  2662→
+  2663→/* ================== MODAL: CREATE MODULE ================== */
+  2664→function openCreateModuleModal(){
+  2665→  const root = document.getElementById("modalRoot");
+  2666→  const colors = ["#C1502E","#3C6B5A","#6B7A3A","#4A3B6B","#9C6B2E","#B5566B","#2E6B62","#5C4A3A","#8B5A9F","#5A7A8B"];
+  2667→  root.innerHTML = `
+  2668→    <div class="modal-overlay">
+  2669→      <div class="modal" role="dialog" aria-modal="true">
+  2670→        <h3>Novo módulo</h3>
+  2671→        <label>Nome do módulo</label>
+  2672→        <input type="text" id="newModName" placeholder="Ex: Academia, Estudos, Leitura..." maxlength="24">
+  2673→        <label>Cor</label>
+  2674→        <div class="color-row" id="colorRow">
+  2675→          ${colors.map((c,i)=>`<div class="color-swatch ${i===0?'selected':''}" data-color="${c}" style="background:${c}"></div>`).join("")}
+  2676→        </div>
+  2677→        <div class="modal-actions">
+  2678→          <button class="btn ghost" id="cancelMod">Cancelar</button>
+  2679→          <button class="btn primary" id="createMod">Criar</button>
+  2680→        </div>
+  2681→      </div>
+  2682→    </div>
+  2683→  `;
+  2684→  let chosen = colors[0];
+  2685→  root.querySelectorAll(".color-swatch").forEach(sw=>{
+  2686→    sw.onclick = ()=>{
+  2687→      root.querySelectorAll(".color-swatch").forEach(x=>x.classList.remove("selected"));
+  2688→      sw.classList.add("selected");
+  2689→      chosen = sw.dataset.color;
+  2690→    };
+  2691→  });
+  2692→  const nameInput = root.querySelector("#newModName");
+  2693→  nameInput.focus();
+  2694→  const close = ()=>{ root.innerHTML = ""; };
+  2695→  root.querySelector("#cancelMod").onclick = close;
+  2696→  const submit = ()=>{
+  2697→    const v = nameInput.value.trim();
+  2698→    if(!v){ toast("Dê um nome ao módulo","warn"); return; }
+  2699→    createCustomModule(v, chosen);
+  2700→    close();
+  2701→  };
+  2702→  root.querySelector("#createMod").onclick = submit;
+  2703→  nameInput.onkeydown = (e)=>{ if(e.key==="Enter") submit(); if(e.key==="Escape") close(); };
+  2704→  root.querySelector(".modal-overlay").onclick = (e)=>{ if(e.target.classList.contains("modal-overlay")) close(); };
+  2705→}
+  2706→
+  2707→/* ================== FOOTER ================== */
+  2708→function updateFooter(){
+  2709→  const day = todayKey();
+  2710→  const dayModules = MODULE_ORDER.filter(k=>MODULES[k] && MODULES[k].kind==="checklist" && MODULES[k].period==="day");
+  2711→  let total=0, done=0;
+  2712→  dayModules.forEach(key=>{
+  2713→    const items = cache.items.filter(i=>i.module===key && i.active);
+  2714→    total += items.length;
+  2715→    items.forEach(it=>{
+  2716→      const st = cache.status.find(s=>s.item_id===it.id && s.period_key===day);
+  2717→      if(st && st.checked) done++;
+  2718→    });
+  2719→  });
+  2720→  const pct = total ? Math.round(done/total*100) : 0;
+  2721→  document.getElementById("footerDate").textContent = new Date().toLocaleDateString('pt-BR',{weekday:'short', day:'2-digit', month:'2-digit'});
+  2722→  document.getElementById("footerProgress").textContent = pct+"% hoje";
+  2723→  // best streak across daily modules
+  2724→  let best = 0;
+  2725→  dayModules.forEach(k=>{ const s = computeStreak(k); if(s>best) best = s; });
+  2726→  document.getElementById("footerStreak").textContent = "🔥 "+best;
+  2727→}
+  2728→
+  2729→/* ================== THEME ================== */
+  2730→function applyTheme(theme){
+  2731→  document.documentElement.setAttribute("data-theme", theme);
+  2732→  document.getElementById("iconSun").style.display = theme==="dark" ? "none" : "block";
+  2733→  document.getElementById("iconMoon").style.display = theme==="dark" ? "block" : "none";
+  2734→  localStorage.setItem("ritual_theme", theme);
+  2735→}
+  2736→function toggleTheme(){
+  2737→  const cur = document.documentElement.getAttribute("data-theme") || "light";
+  2738→  applyTheme(cur==="dark" ? "light" : "dark");
+  2739→}
+  2740→
+  2741→/* ================== PWA: SERVICE WORKER + INSTALL PROMPT ================== */
+  2742→// Registra o service worker para funcionar offline no celular
+  2743→if("serviceWorker" in navigator){
+  2744→  window.addEventListener("load", ()=>{
+  2745→    navigator.serviceWorker.register("/sw.js").catch(()=>{ /* falha silenciosa — app continua funcionando online */ });
+  2746→  });
+  2747→}
+  2748→
+  2749→// Detecta se o app está instalado (rodando como standalone)
+  2750→const IS_INSTALLED = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  2751→
+  2752→// Botão "Instalar app" (beforeinstallprompt) — só aparece em Android/Chrome quando instalável
+  2753→let deferredPrompt = null;
+  2754→window.addEventListener("beforeinstallprompt", (e)=>{
+  2755→  e.preventDefault();
+  2756→  deferredPrompt = e;
+  2757→  showInstallButton();
+  2758→});
+  2759→window.addEventListener("appinstalled", ()=>{
+  2760→  hideInstallButton();
+  2761→  toast("App instalado! 🎉","ok");
+  2762→});
+  2763→
+  2764→function showInstallButton(){
+  2765→  const wrap = document.querySelector(".wrap");
+  2766→  if(!wrap || document.getElementById("installBanner")) return;
+  2767→  const banner = document.createElement("div");
+  2768→  banner.id = "installBanner";
+  2769→  banner.style.cssText = "background:var(--accent);color:#FFFBF2;border-radius:12px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;font-size:13px;";
+  2770→  banner.innerHTML = `
+  2771→    <span style="font-size:22px;">📲</span>
+  2772→    <div style="flex:1;min-width:0;">
+  2773→      <b style="display:block;font-size:13px;">Instalar app</b>
+  2774→      <span style="opacity:.85;font-size:11px;">use offline no celular, como app nativo</span>
+  2775→    </div>
+  2776→    <button id="installYes" style="background:#FFFBF2;color:var(--accent);border:none;border-radius:8px;padding:8px 12px;font-weight:700;font-size:12px;cursor:pointer;">Instalar</button>
+  2777→    <button id="installNo" style="background:transparent;color:#FFFBF2;border:1px solid rgba(255,251,242,0.4);border-radius:8px;padding:8px 10px;font-size:12px;cursor:pointer;">×</button>
+  2778→  `;
+  2779→  wrap.insertBefore(banner, wrap.firstChild.nextSibling); // depois do header
+  2780→  banner.querySelector("#installYes").onclick = async ()=>{
+  2781→    if(!deferredPrompt) return;
+  2782→    deferredPrompt.prompt();
+  2783→    const { outcome } = await deferredPrompt.userChoice;
+  2784→    deferredPrompt = null;
+  2785→    hideInstallButton();
+  2786→  };
+  2787→  banner.querySelector("#installNo").onclick = ()=>{
+  2788→    hideInstallButton();
+  2789→    localStorage.setItem("ritual_install_dismissed", "1");
+  2790→  };
+  2791→}
+  2792→function hideInstallButton(){
+  2793→  const b = document.getElementById("installBanner");
+  2794→  if(b) b.remove();
+  2795→}
+  2796→
+  2797→/* ================== INIT ================== */
+  2798→(async function init(){
+  2799→  // theme
+  2800→  const savedTheme = localStorage.getItem("ritual_theme") || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? "dark" : "light");
+  2801→  applyTheme(savedTheme);
+  2802→  document.getElementById("themeToggle").onclick = toggleTheme;
+  2803→
+  2804→  // custom modules
+  2805→  syncCustomModules();
+  2806→
+  2807→  // deep link
+  2808→  const params = new URLSearchParams(window.location.search);
+  2809→  const mod = params.get("modulo");
+  2810→  if(mod && MODULES[mod]) activeModule = mod;
+  2811→
+  2812→  render(); // render imediato com cache local
+  2813→  await fetchAll();
+  2814→  render(); // re-render com dados do Supabase (se disponíveis)
+  2815→  updateFooter();
+  2816→
+  2817→  // mostra dica de instalação uma vez (se não foi dispensada e não está instalado)
+  2818→  if(!IS_INSTALLED && !localStorage.getItem("ritual_install_dismissed") && deferredPrompt){
+  2819→    showInstallButton();
+  2820→  }
+  2821→})();
+  2822→</script>
+  2823→</body>
+  2824→</html>
+  2825→

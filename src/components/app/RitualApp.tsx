@@ -15,7 +15,7 @@ import { useTheme } from "next-themes"
 
 function SyncIndicator({ status, lastSyncAt }: { status: SyncStatus; lastSyncAt: number | null }) {
   const config = {
-    idle: { icon: <Check className="w-2.5 h-2.5" />, label: "Sincronizado", color: "text-muted-foreground" },
+    disconnected: { icon: <AlertCircle className="w-2.5 h-2.5" />, label: "Offline", color: "text-muted-foreground" },
     syncing: { icon: <RefreshCw className="w-2.5 h-2.5 animate-spin" />, label: "Salvando...", color: "text-muted-foreground" },
     synced: { icon: <Check className="w-2.5 h-2.5" />, label: "Sincronizado", color: "text-green-600" },
     error: { icon: <AlertCircle className="w-2.5 h-2.5" />, label: "Erro", color: "text-red-500" },

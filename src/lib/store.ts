@@ -6,7 +6,7 @@ import {
   todayKey,
 } from "./helpers"
 
-export type SyncStatus = "idle" | "syncing" | "synced" | "error"
+export type SyncStatus = "syncing" | "synced" | "error" | "disconnected"
 
 interface AppState {
   loaded: boolean
@@ -60,7 +60,6 @@ interface AppState {
 }
 
 // Sync-aware API wrapper
-let syncTimeout: ReturnType<typeof setTimeout> | null = null
 const api = (url: string, opts?: RequestInit, trackSync = true) => {
   if (trackSync) useStore.getState()._setSyncStatus("syncing")
   return fetch(url, { headers: { "Content-Type": "application/json" }, ...opts })
@@ -71,16 +70,12 @@ const api = (url: string, opts?: RequestInit, trackSync = true) => {
     .then(data => {
       if (trackSync) {
         useStore.setState({ syncStatus: "synced", lastSyncAt: Date.now() })
-        if (syncTimeout) clearTimeout(syncTimeout)
-        syncTimeout = setTimeout(() => useStore.setState({ syncStatus: "idle" }), 3000)
       }
       return data
     })
     .catch(err => {
       if (trackSync) {
         useStore.setState({ syncStatus: "error" })
-        if (syncTimeout) clearTimeout(syncTimeout)
-        syncTimeout = setTimeout(() => useStore.setState({ syncStatus: "idle" }), 5000)
       }
       throw err
     })
@@ -102,7 +97,7 @@ export const useStore = create<AppState>((set, get) => ({
   gratitudeLogs: [],
   nutritionSettings: defaultNutritionSettings(),
   editMode: {},
-  syncStatus: "idle",
+  syncStatus: "disconnected",
   lastSyncAt: null,
 
   // Internal sync tracking
@@ -141,8 +136,6 @@ export const useStore = create<AppState>((set, get) => ({
         gratitudeLogs: (gratitude || []).map((g: any) => ({ dayKey: g.dayKey, items: typeof g.items === "string" ? JSON.parse(g.items) : g.items })),
         nutritionSettings: nutri?.id ? (typeof nutri.settings === "string" ? { ...nutri, settings: JSON.parse(nutri.settings) } : nutri) : defaultNutritionSettings(),
       })
-      if (syncTimeout) clearTimeout(syncTimeout)
-      syncTimeout = setTimeout(() => set({ syncStatus: "idle" }), 3000)
     } catch {
       set({ loaded: true, syncStatus: "error" })
     }

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { todayKey, lastNDays, MOOD_OPTIONS, MOOD_COLORS, formatDateLabel } from "@/lib/helpers"
 import { Download } from "lucide-react"
+import { SyncSettings } from "./SyncSettings"
 
 export function HistoryModule() {
   const modules = useStore(s => s.modules)
@@ -201,6 +202,9 @@ export function HistoryModule() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Supabase Sync */}
+      <SyncSettings />
     </div>
   )
 }

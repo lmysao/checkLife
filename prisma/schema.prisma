@@ -131,3 +131,13 @@ model GratitudeLog {
   items     String   @default("[]")
   updatedAt DateTime @updatedAt
 }
+
+// ============ SYNC CONFIG (Supabase) ============
+model SyncConfig {
+  id        Int      @id @default(1)
+  url       String   @default("")
+  anonKey   String   @default("")
+  lastPush  DateTime?
+  lastPull  DateTime?
+  updatedAt DateTime @updatedAt
+}
