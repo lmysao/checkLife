@@ -10,15 +10,15 @@ import { TasksModule } from "./TasksModule"
 import { HistoryModule } from "./HistoryModule"
 import { toast, Toaster } from "sonner"
 import { Skeleton } from "@/components/ui/skeleton"
-import { RefreshCw, Check, AlertCircle } from "lucide-react"
+import { RefreshCw, Check, AlertCircle, Moon, Sun } from "lucide-react"
+import { useTheme } from "next-themes"
 
 function SyncIndicator({ status, lastSyncAt }: { status: SyncStatus; lastSyncAt: number | null }) {
-  if (status === "idle") return null
-
   const config = {
+    idle: { icon: <Check className="w-2.5 h-2.5" />, label: "Sincronizado", color: "text-muted-foreground" },
     syncing: { icon: <RefreshCw className="w-2.5 h-2.5 animate-spin" />, label: "Salvando...", color: "text-muted-foreground" },
     synced: { icon: <Check className="w-2.5 h-2.5" />, label: "Sincronizado", color: "text-green-600" },
-    error: { icon: <AlertCircle className="w-2.5 h-2.5" />, label: "Erro ao salvar", color: "text-red-500" },
+    error: { icon: <AlertCircle className="w-2.5 h-2.5" />, label: "Erro", color: "text-red-500" },
   }[status]
 
   const timeStr = lastSyncAt
@@ -26,11 +26,25 @@ function SyncIndicator({ status, lastSyncAt }: { status: SyncStatus; lastSyncAt:
     : ""
 
   return (
-    <div className={`flex items-center gap-1 text-[9px] font-mono ${config.color} transition-all`}>
+    <div className={`flex items-center gap-1 text-[9px] font-mono ${config.color}`}>
       {config.icon}
       <span>{config.label}</span>
-      {status === "synced" && timeStr && <span className="opacity-70">{timeStr}</span>}
+      {timeStr && <span className="opacity-70">{timeStr}</span>}
     </div>
+  )
+}
+
+function ThemeToggle() {
+  const { theme, setTheme } = useTheme()
+  return (
+    <button
+      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+      className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-secondary transition-colors"
+      type="button"
+      aria-label="Alternar modo escuro"
+    >
+      {theme === "dark" ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+    </button>
   )
 }
 
@@ -60,8 +74,6 @@ export function RitualApp() {
   }
 
   const currentModule = modules.find(m => m.key === activeTab)
-
-  // Check if activeTab belongs to a stacked group
   const activeGroup = groups.find(g => g.items.some(i => i.moduleKey === activeTab))
   const isStacked = activeGroup?.stacked ?? false
 
@@ -71,7 +83,10 @@ export function RitualApp() {
         <h1 className="text-xl font-bold" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>
           Ritual diário
         </h1>
-        <SyncIndicator status={syncStatus} lastSyncAt={lastSyncAt} />
+        <div className="flex items-center gap-2">
+          <SyncIndicator status={syncStatus} lastSyncAt={lastSyncAt} />
+          <ThemeToggle />
+        </div>
       </header>
       <ModuleTabs />
       <main className="flex-1 mt-3 space-y-3">
@@ -80,7 +95,6 @@ export function RitualApp() {
         {activeTab === "historico" && <HistoryModule />}
         {activeTab === "bemestar" && <BemEstarModule />}
 
-        {/* Stacked group: render all modules vertically */}
         {isStacked && activeGroup && (
           <div className="space-y-3">
             {activeGroup.items.map(item => {
@@ -99,7 +113,6 @@ export function RitualApp() {
           </div>
         )}
 
-        {/* Non-stacked: render single module */}
         {!isStacked && currentModule?.kind === "checklist" && !["resumo", "tarefas", "historico", "bemestar"].includes(activeTab) && (
           <ChecklistModule moduleKey={activeTab} />
         )}
@@ -118,14 +131,13 @@ function StickyFooter() {
   const modules = useStore(s => s.modules)
   const checklistItems = useStore(s => s.checklistItems)
   const statuses = useStore(s => s.statuses)
-  const tasks = useStore(s => s.tasks)
   const today = new Date()
   const dayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`
 
   const dayModules = modules.filter(m => m.kind === "checklist" && m.period === "day")
   let total = 0, done = 0
-  dayModules.forEach(key => {
-    const items = checklistItems.filter(i => i.module === key.key && i.active)
+  dayModules.forEach(mk => {
+    const items = checklistItems.filter(i => i.module === mk.key && i.active)
     total += items.length
     items.forEach(it => {
       const st = statuses.find(s => s.itemId === it.id && s.periodKey === dayKey)
@@ -134,7 +146,6 @@ function StickyFooter() {
   })
   const pct = total ? Math.round(done / total * 100) : 0
 
-  // Best streak
   let best = 0
   for (const mk of dayModules) {
     let streak = 0
