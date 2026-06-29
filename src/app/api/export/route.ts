@@ -11,16 +11,20 @@ export async function GET(req: Request) {
   const today = new Date()
   const toKey = to || `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
   const fromKey = from || (() => {
-    const d = new Date(today)
-    d.setDate(d.getDate() - 30)
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    // Default to start of current year for mood-image, start of year for all others
+    if (type === 'mood-image') {
+      return `${today.getFullYear()}-01-01`
+    }
+    // For other exports, default to start of year to capture everything
+    return `${today.getFullYear()}-01-01`
   })()
 
   try {
-    if (type === 'json') {
+    if (type === 'json' || type === 'diary') {
       const data = await gatherAllData(fromKey, toKey)
+      const filename = type === 'diary' ? `diary-${fromKey}_to_${toKey}.json` : `ritual-${fromKey}_to_${toKey}.json`
       return new NextResponse(JSON.stringify(data, null, 2), {
-        headers: { 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="ritual-${fromKey}_to_${toKey}.json"` },
+        headers: { 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="${filename}"` },
       })
     }
 
@@ -28,13 +32,6 @@ export async function GET(req: Request) {
       const buffer = await generateExcel(fromKey, toKey)
       return new NextResponse(buffer, {
         headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': `attachment; filename="ritual-${fromKey}_to_${toKey}.xlsx"` },
-      })
-    }
-
-    if (type === 'diary') {
-      const data = await gatherAllData(fromKey, toKey)
-      return new NextResponse(JSON.stringify(data, null, 2), {
-        headers: { 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="diary-${fromKey}_to_${toKey}.json"` },
       })
     }
 

@@ -92,6 +92,7 @@ export interface ModuleGroup {
   id: string
   name: string
   position: number
+  stacked: boolean
   items: ModuleGroupItem[]
 }
 

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Plus, Trash2, Pencil, Settings, GripVertical } from "lucide-react"
+import { Plus, Trash2, Pencil, Settings, GripVertical, Layers } from "lucide-react"
 import { toast } from "sonner"
 import { useState } from "react"
 
@@ -19,6 +19,7 @@ export function GroupManager() {
   const removeModuleFromGroup = useStore(s => s.removeModuleFromGroup)
   const [open, setOpen] = useState(false)
   const [newName, setNewName] = useState("")
+  const [newStacked, setNewStacked] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState("")
   const [addModTo, setAddModTo] = useState<string | null>(null)
@@ -28,8 +29,9 @@ export function GroupManager() {
 
   const handleCreate = async () => {
     if (!newName.trim()) return
-    await createGroup(newName.trim())
+    await createGroup(newName.trim(), newStacked)
     setNewName("")
+    setNewStacked(false)
     toast.success("Grupo criado")
   }
 
@@ -45,6 +47,11 @@ export function GroupManager() {
     toast.success("Grupo excluído")
   }
 
+  const handleToggleStacked = async (id: string, currentStacked: boolean) => {
+    await updateGroup(id, { stacked: !currentStacked })
+    toast.success(currentStacked ? "Modo abas ativado" : "Modo empilhado ativado")
+  }
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -58,6 +65,22 @@ export function GroupManager() {
           <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Nome do grupo..." onKeyDown={e => e.key === "Enter" && handleCreate()} className="text-sm" />
           <Button size="sm" onClick={handleCreate} type="button"><Plus className="w-4 h-4" /></Button>
         </div>
+        {/* Stacked toggle for new group */}
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <div
+            className="w-8 h-4 rounded-full relative transition-colors"
+            style={{ backgroundColor: newStacked ? "var(--primary)" : "var(--border)" }}
+            onClick={() => setNewStacked(!newStacked)}
+          >
+            <div
+              className="absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-transform"
+              style={{ transform: newStacked ? "translateX(18px)" : "translateX(2px)" }}
+            />
+          </div>
+          <span className="text-xs text-muted-foreground flex items-center gap-1">
+            <Layers className="w-3 h-3" /> Empilhar módulos (um abaixo do outro)
+          </span>
+        </label>
         <ScrollArea className="max-h-[300px]">
           <div className="space-y-3">
             {groups.map(g => (
@@ -81,6 +104,22 @@ export function GroupManager() {
                     </Button>
                   </div>
                 </div>
+                {/* Stacked toggle for existing group */}
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <div
+                    className="w-8 h-4 rounded-full relative transition-colors"
+                    style={{ backgroundColor: g.stacked ? "var(--primary)" : "var(--border)" }}
+                    onClick={() => handleToggleStacked(g.id, g.stacked)}
+                  >
+                    <div
+                      className="absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-transform"
+                      style={{ transform: g.stacked ? "translateX(18px)" : "translateX(2px)" }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                    <Layers className="w-3 h-3" /> {g.stacked ? "Empilhado" : "Abas separadas"}
+                  </span>
+                </label>
                 <div className="space-y-1">
                   {g.items.map(item => {
                     const mod = modules.find(m => m.key === item.moduleKey)

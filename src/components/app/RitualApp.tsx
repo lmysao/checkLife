@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
-import { useStore } from "@/lib/store"
+import { useStore, type SyncStatus } from "@/lib/store"
 import { ModuleTabs } from "./ModuleTabs"
 import { Dashboard } from "./Dashboard"
 import { ChecklistModule } from "./ChecklistModule"
@@ -10,12 +10,38 @@ import { TasksModule } from "./TasksModule"
 import { HistoryModule } from "./HistoryModule"
 import { toast, Toaster } from "sonner"
 import { Skeleton } from "@/components/ui/skeleton"
+import { RefreshCw, Check, AlertCircle } from "lucide-react"
+
+function SyncIndicator({ status, lastSyncAt }: { status: SyncStatus; lastSyncAt: number | null }) {
+  if (status === "idle") return null
+
+  const config = {
+    syncing: { icon: <RefreshCw className="w-2.5 h-2.5 animate-spin" />, label: "Salvando...", color: "text-muted-foreground" },
+    synced: { icon: <Check className="w-2.5 h-2.5" />, label: "Sincronizado", color: "text-green-600" },
+    error: { icon: <AlertCircle className="w-2.5 h-2.5" />, label: "Erro ao salvar", color: "text-red-500" },
+  }[status]
+
+  const timeStr = lastSyncAt
+    ? new Date(lastSyncAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : ""
+
+  return (
+    <div className={`flex items-center gap-1 text-[9px] font-mono ${config.color} transition-all`}>
+      {config.icon}
+      <span>{config.label}</span>
+      {status === "synced" && timeStr && <span className="opacity-70">{timeStr}</span>}
+    </div>
+  )
+}
 
 export function RitualApp() {
   const loaded = useStore(s => s.loaded)
   const activeTab = useStore(s => s.activeTab)
   const fetchInitialData = useStore(s => s.fetchInitialData)
   const modules = useStore(s => s.modules)
+  const groups = useStore(s => s.groups)
+  const syncStatus = useStore(s => s.syncStatus)
+  const lastSyncAt = useStore(s => s.lastSyncAt)
 
   useEffect(() => {
     fetchInitialData().then(() => toast.success("Dados carregados"))
@@ -35,21 +61,50 @@ export function RitualApp() {
 
   const currentModule = modules.find(m => m.key === activeTab)
 
+  // Check if activeTab belongs to a stacked group
+  const activeGroup = groups.find(g => g.items.some(i => i.moduleKey === activeTab))
+  const isStacked = activeGroup?.stacked ?? false
+
   return (
     <div className="max-w-[480px] mx-auto px-4 pt-4 pb-28 min-h-screen flex flex-col">
       <header className="flex items-center justify-between mb-3">
         <h1 className="text-xl font-bold" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>
           Ritual diário
         </h1>
+        <SyncIndicator status={syncStatus} lastSyncAt={lastSyncAt} />
       </header>
       <ModuleTabs />
       <main className="flex-1 mt-3 space-y-3">
         {activeTab === "resumo" && <Dashboard />}
-        {currentModule?.kind === "checklist" && <ChecklistModule moduleKey={activeTab} />}
-        {currentModule?.kind === "mental_humor" && <BemEstarModule />}
         {activeTab === "tarefas" && <TasksModule />}
         {activeTab === "historico" && <HistoryModule />}
-        {!["resumo", "tarefas", "historico"].includes(activeTab) && !currentModule && (
+        {activeTab === "bemestar" && <BemEstarModule />}
+
+        {/* Stacked group: render all modules vertically */}
+        {isStacked && activeGroup && (
+          <div className="space-y-3">
+            {activeGroup.items.map(item => {
+              const mod = modules.find(m => m.key === item.moduleKey)
+              if (!mod) return null
+              return (
+                <div key={item.moduleKey} className="space-y-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: mod.accent }} />
+                    <h3 className="text-sm font-bold" style={{ color: mod.accent }}>{mod.label}</h3>
+                  </div>
+                  {mod.kind === "checklist" && <ChecklistModule moduleKey={mod.key} />}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Non-stacked: render single module */}
+        {!isStacked && currentModule?.kind === "checklist" && !["resumo", "tarefas", "historico", "bemestar"].includes(activeTab) && (
+          <ChecklistModule moduleKey={activeTab} />
+        )}
+
+        {!["resumo", "tarefas", "historico", "bemestar"].includes(activeTab) && !currentModule && (
           <p className="text-center text-muted-foreground py-8">Módulo não encontrado.</p>
         )}
       </main>

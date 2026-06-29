@@ -6,6 +6,8 @@ import {
   todayKey,
 } from "./helpers"
 
+export type SyncStatus = "idle" | "syncing" | "synced" | "error"
+
 interface AppState {
   loaded: boolean
   activeTab: string
@@ -22,6 +24,9 @@ interface AppState {
   gratitudeLogs: GratitudeDay[]
   nutritionSettings: NutritionSettings
   editMode: Record<string, boolean>
+  syncStatus: SyncStatus
+  lastSyncAt: number | null
+  _setSyncStatus: (status: SyncStatus) => void
 
   fetchInitialData: () => Promise<void>
   setActiveTab: (tab: string) => void
@@ -47,14 +52,39 @@ interface AppState {
   createModule: (label: string, accent: string) => Promise<void>
   updateModule: (key: string, data: Partial<Module>) => Promise<void>
   deleteModule: (key: string) => Promise<void>
-  createGroup: (name: string) => Promise<void>
-  updateGroup: (id: string, data: { name?: string; position?: number }) => Promise<void>
+  createGroup: (name: string, stacked?: boolean) => Promise<void>
+  updateGroup: (id: string, data: { name?: string; position?: number; stacked?: boolean }) => Promise<void>
   deleteGroup: (id: string) => Promise<void>
   addModuleToGroup: (groupId: string, moduleKey: string) => Promise<void>
   removeModuleFromGroup: (itemId: string) => Promise<void>
 }
 
-const api = (url: string, opts?: RequestInit) => fetch(url, { headers: { "Content-Type": "application/json" }, ...opts }).then(r => r.json())
+// Sync-aware API wrapper
+let syncTimeout: ReturnType<typeof setTimeout> | null = null
+const api = (url: string, opts?: RequestInit, trackSync = true) => {
+  if (trackSync) useStore.getState()._setSyncStatus("syncing")
+  return fetch(url, { headers: { "Content-Type": "application/json" }, ...opts })
+    .then(r => {
+      if (!r.ok) throw new Error(`${r.status}`)
+      return r.json()
+    })
+    .then(data => {
+      if (trackSync) {
+        useStore.setState({ syncStatus: "synced", lastSyncAt: Date.now() })
+        if (syncTimeout) clearTimeout(syncTimeout)
+        syncTimeout = setTimeout(() => useStore.setState({ syncStatus: "idle" }), 3000)
+      }
+      return data
+    })
+    .catch(err => {
+      if (trackSync) {
+        useStore.setState({ syncStatus: "error" })
+        if (syncTimeout) clearTimeout(syncTimeout)
+        syncTimeout = setTimeout(() => useStore.setState({ syncStatus: "idle" }), 5000)
+      }
+      throw err
+    })
+}
 
 export const useStore = create<AppState>((set, get) => ({
   loaded: false,
@@ -72,36 +102,50 @@ export const useStore = create<AppState>((set, get) => ({
   gratitudeLogs: [],
   nutritionSettings: defaultNutritionSettings(),
   editMode: {},
+  syncStatus: "idle",
+  lastSyncAt: null,
+
+  // Internal sync tracking
+  _setSyncStatus: (status: SyncStatus) => set({ syncStatus: status }),
 
   fetchInitialData: async () => {
-    const [modules, groups, items, statuses, tasks, mood, water, macros, pyramid, gratitude, nutri] = await Promise.all([
-      api("/api/modules"),
-      api("/api/module-groups"),
-      api("/api/checklist-items"),
-      api("/api/checklist-status"),
-      api("/api/tasks"),
-      api(`/api/mood?day=${todayKey()}`),
-      api("/api/water"),
-      api("/api/macros"),
-      api("/api/pyramid"),
-      api("/api/gratitude"),
-      api("/api/nutrition-settings"),
-    ])
-    set({
-      loaded: true,
-      modules: modules || [],
-      groups: groups || [],
-      checklistItems: items || [],
-      statuses: statuses || [],
-      tasks: tasks || [],
-      moodMoments: mood?.moments || [],
-      moodDailies: mood?.dailies ? [mood.daily].filter(Boolean) : [],
-      waterLogs: (water || []).map((w: any) => ({ dayKey: w.dayKey, count: w.count })),
-      macrosLogs: (macros || []).map((m: any) => ({ dayKey: m.dayKey, carbs: m.carbs, protein: m.protein, fat: m.fat })),
-      pyramidLogs: (pyramid || []).map((p: any) => ({ dayKey: p.dayKey, counts: typeof p.counts === "string" ? JSON.parse(p.counts) : p.counts })),
-      gratitudeLogs: (gratitude || []).map((g: any) => ({ dayKey: g.dayKey, items: typeof g.items === "string" ? JSON.parse(g.items) : g.items })),
-      nutritionSettings: nutri?.id ? nutri : defaultNutritionSettings(),
-    })
+    set({ syncStatus: "syncing" })
+    try {
+      const [modules, groups, items, statuses, tasks, mood, water, macros, pyramid, gratitude, nutri] = await Promise.all([
+        api("/api/modules", undefined, false),
+        api("/api/module-groups", undefined, false),
+        api("/api/checklist-items", undefined, false),
+        api("/api/checklist-status", undefined, false),
+        api("/api/tasks", undefined, false),
+        api(`/api/mood?day=${todayKey()}`, undefined, false),
+        api("/api/water", undefined, false),
+        api("/api/macros", undefined, false),
+        api("/api/pyramid", undefined, false),
+        api("/api/gratitude", undefined, false),
+        api("/api/nutrition-settings", undefined, false),
+      ])
+      set({
+        loaded: true,
+        syncStatus: "synced",
+        lastSyncAt: Date.now(),
+        modules: modules || [],
+        groups: (groups || []).map((g: any) => ({ ...g, stacked: g.stacked ?? false })),
+        checklistItems: items || [],
+        statuses: statuses || [],
+        tasks: tasks || [],
+        moodMoments: mood?.moments || [],
+        moodDailies: mood?.dailies ? [mood.daily].filter(Boolean) : [],
+        waterLogs: (water || []).map((w: any) => ({ dayKey: w.dayKey, count: w.count })),
+        macrosLogs: (macros || []).map((m: any) => ({ dayKey: m.dayKey, carbs: m.carbs, protein: m.protein, fat: m.fat })),
+        pyramidLogs: (pyramid || []).map((p: any) => ({ dayKey: p.dayKey, counts: typeof p.counts === "string" ? JSON.parse(p.counts) : p.counts })),
+        gratitudeLogs: (gratitude || []).map((g: any) => ({ dayKey: g.dayKey, items: typeof g.items === "string" ? JSON.parse(g.items) : g.items })),
+        nutritionSettings: nutri?.id ? (typeof nutri.settings === "string" ? { ...nutri, settings: JSON.parse(nutri.settings) } : nutri) : defaultNutritionSettings(),
+      })
+      if (syncTimeout) clearTimeout(syncTimeout)
+      syncTimeout = setTimeout(() => set({ syncStatus: "idle" }), 3000)
+    } catch {
+      set({ loaded: true, syncStatus: "error" })
+    }
   },
 
   setActiveTab: (tab) => set({ activeTab: tab }),
@@ -135,7 +179,6 @@ export const useStore = create<AppState>((set, get) => ({
 
   moveChecklistItem: async (id, dir) => {
     await api("/api/checklist-items", { method: "PUT", body: JSON.stringify({ id, module: "_", label: dir < 0 ? "up" : "down" }) })
-    // Refetch items for that module
     const item = get().checklistItems.find(i => i.id === id)
     if (item) {
       const items = await api(`/api/checklist-items?module=${item.module}`)
@@ -165,7 +208,6 @@ export const useStore = create<AppState>((set, get) => ({
 
   moveTask: async (id, dir) => {
     await api("/api/tasks", { method: "PUT", body: JSON.stringify({ id, moveDir: dir }) })
-    // Refetch tasks
     const tasks = await api("/api/tasks")
     set({ tasks: tasks || [] })
   },
@@ -203,7 +245,6 @@ export const useStore = create<AppState>((set, get) => ({
 
   addMacro: async (dayKey, field, grams) => {
     await api("/api/macros", { method: "POST", body: JSON.stringify({ dayKey, field, grams }) })
-    // Fetch updated
     const m = await api(`/api/macros?day=${dayKey}`)
     set(s => {
       const filtered = s.macrosLogs.filter(l => l.dayKey !== dayKey)
@@ -252,9 +293,9 @@ export const useStore = create<AppState>((set, get) => ({
     if (get().activeTab === key) set({ activeTab: "resumo" })
   },
 
-  createGroup: async (name) => {
-    const group = await api("/api/module-groups", { method: "POST", body: JSON.stringify({ name }) })
-    set(s => ({ groups: [...s.groups, { ...group, items: [] }] }))
+  createGroup: async (name, stacked = false) => {
+    const group = await api("/api/module-groups", { method: "POST", body: JSON.stringify({ name, stacked }) })
+    set(s => ({ groups: [...s.groups, { ...group, items: [], stacked: group.stacked ?? false }] }))
   },
 
   updateGroup: async (id, data) => {
@@ -270,12 +311,12 @@ export const useStore = create<AppState>((set, get) => ({
   addModuleToGroup: async (groupId, moduleKey) => {
     await api("/api/module-groups/items", { method: "POST", body: JSON.stringify({ groupId, moduleKey }) })
     const groups = await api("/api/module-groups")
-    set({ groups: groups || [] })
+    set({ groups: (groups || []).map((g: any) => ({ ...g, stacked: g.stacked ?? false })) })
   },
 
   removeModuleFromGroup: async (itemId) => {
     await api(`/api/module-groups/items?id=${itemId}`, { method: "DELETE" })
     const groups = await api("/api/module-groups")
-    set({ groups: groups || [] })
+    set({ groups: (groups || []).map((g: any) => ({ ...g, stacked: g.stacked ?? false })) })
   },
 }))

@@ -2,7 +2,7 @@
 
 import { useStore } from "@/lib/store"
 import { Button } from "@/components/ui/button"
-import { Plus, Settings, X } from "lucide-react"
+import { Plus, Settings, X, Layers } from "lucide-react"
 import { useState } from "react"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger,
@@ -25,7 +25,7 @@ export function ModuleTabs() {
   const specialKeys = new Set(["resumo", "tarefas", "historico", "bemestar"])
 
   // Build tab structure: special tabs, then groups (with their modules), then ungrouped checklist modules
-  const tabs: { key: string; label: string; accent: string; custom?: boolean; isGroup?: boolean }[] = []
+  const tabs: { key: string; label: string; accent: string; custom?: boolean; isGroup?: boolean; isStacked?: boolean }[] = []
 
   // Special tabs first
   for (const m of modules) {
@@ -36,7 +36,7 @@ export function ModuleTabs() {
 
   // Group tabs
   for (const g of groups) {
-    tabs.push({ key: `group_${g.id}`, label: g.name, accent: "#6B7A3A", isGroup: true })
+    tabs.push({ key: `group_${g.id}`, label: g.name, accent: "#6B7A3A", isGroup: true, isStacked: g.stacked })
   }
 
   // Ungrouped checklist modules (not in special, not in groups)
@@ -79,6 +79,7 @@ export function ModuleTabs() {
               : {}
             }
           >
+            {t.isStacked && <Layers className="w-3 h-3" />}
             {t.label}
             {t.custom && (
               <X
@@ -90,8 +91,8 @@ export function ModuleTabs() {
         ))}
         <CreateModuleButton />
       </nav>
-      {/* Show group sub-navigation if in a group */}
-      {activeGroup && (
+      {/* Show group sub-navigation if in a group AND group is NOT stacked */}
+      {activeGroup && !activeGroup.stacked && (
         <div className="flex gap-1.5 overflow-x-auto pb-1 hide-scrollbar">
           {activeGroup.items.map(item => {
             const m = modules.find(mod => mod.key === item.moduleKey)

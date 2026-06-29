@@ -10,19 +10,20 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const { name } = await req.json()
+  const { name, stacked } = await req.json()
   const maxPos = await db.moduleGroup.aggregate({ _max: { position: true } })
   const group = await db.moduleGroup.create({
-    data: { name, position: (maxPos._max.position ?? -1) + 1 },
+    data: { name, stacked: !!stacked, position: (maxPos._max.position ?? -1) + 1 },
   })
   return NextResponse.json(group)
 }
 
 export async function PUT(req: Request) {
-  const { id, name, position } = await req.json()
+  const { id, name, position, stacked } = await req.json()
   const data: Record<string, unknown> = {}
   if (name !== undefined) data.name = name
   if (position !== undefined) data.position = position
+  if (stacked !== undefined) data.stacked = stacked
   const group = await db.moduleGroup.update({ where: { id }, data })
   return NextResponse.json(group)
 }

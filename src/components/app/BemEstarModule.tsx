@@ -444,7 +444,16 @@ function GratitudeSection() {
   const saveGratitude = useStore(s => s.saveGratitude)
 
   const day = todayKey()
-  const [vals, setVals] = useState<string[]>(["", "", ""])
+  const saved = gratitudeLogs.find(g => g.dayKey === day)
+  const [vals, setVals] = useState<string[]>(() => {
+    if (saved?.items?.length) {
+      // Pad to 3 items
+      const items = [...saved.items]
+      while (items.length < 3) items.push("")
+      return items.slice(0, 3)
+    }
+    return ["", "", ""]
+  })
 
   return (
     <Card className="border-border">
