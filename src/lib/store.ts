@@ -106,7 +106,7 @@ export const useStore = create<AppState>((set, get) => ({
   fetchInitialData: async () => {
     set({ syncStatus: "syncing" })
     try {
-      const [modules, groups, items, statuses, tasks, mood, water, macros, pyramid, gratitude, nutri] = await Promise.all([
+      let [modules, groups, items, statuses, tasks, mood, water, macros, pyramid, gratitude, nutri] = await Promise.all([
         api("/api/modules", undefined, false),
         api("/api/module-groups", undefined, false),
         api("/api/checklist-items", undefined, false),
@@ -119,6 +119,21 @@ export const useStore = create<AppState>((set, get) => ({
         api("/api/gratitude", undefined, false),
         api("/api/nutrition-settings", undefined, false),
       ])
+      
+      // Auto-seed if no modules exist
+      if (!modules || modules.length === 0) {
+        await api("/api/seed", { method: "POST" }, false)
+        // Refetch after seeding
+        const [newModules, newGroups, newItems] = await Promise.all([
+          api("/api/modules", undefined, false),
+          api("/api/module-groups", undefined, false),
+          api("/api/checklist-items", undefined, false),
+        ])
+        modules = newModules || []
+        groups = newGroups || []
+        items = newItems || []
+      }
+      
       set({
         loaded: true,
         syncStatus: "synced",
@@ -133,7 +148,7 @@ export const useStore = create<AppState>((set, get) => ({
         waterLogs: (water || []).map((w: any) => ({ dayKey: w.dayKey, count: w.count })),
         macrosLogs: (macros || []).map((m: any) => ({ dayKey: m.dayKey, carbs: m.carbs, protein: m.protein, fat: m.fat })),
         pyramidLogs: (pyramid || []).map((p: any) => ({ dayKey: p.dayKey, counts: typeof p.counts === "string" ? JSON.parse(p.counts) : p.counts })),
-        gratitudeLogs: (gratitude || []).map((g: any) => ({ dayKey: g.dayKey, items: typeof g.items === "string" ? JSON.parse(g.items) : g.items })),
+        gratitudeLogs: (gratitude || []).map((g: any) => ({ dayKey: g.dayKey, items: typeof g.items === "string" ? JSON.parse(g.items) : g.items }),
         nutritionSettings: nutri?.id ? (typeof nutri.settings === "string" ? { ...defaultNutritionSettings(), ...JSON.parse(nutri.settings) } : { ...defaultNutritionSettings(), ...nutri }) : defaultNutritionSettings(),
       })
     } catch {
