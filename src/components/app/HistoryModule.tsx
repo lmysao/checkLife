@@ -48,10 +48,12 @@ export function HistoryModule() {
     return total ? Math.round(done / total * 100) : 0
   }
 
+  const w = nutritionSettings.weight || 70
+  const cs = nutritionSettings.cupSizeMl || 250
   const waterGoal = nutritionSettings.waterAutoCalc
-    ? Math.max(1, Math.round(Math.max(800, nutritionSettings.weight * 35) / nutritionSettings.cupSizeMl))
-    : nutritionSettings.waterGoalOverride
-  const carbsGoal = nutritionSettings.macros.carbs.goal
+    ? Math.max(1, Math.round(Math.max(800, w * 35) / cs))
+    : (nutritionSettings.waterGoalOverride || 8)
+  const carbsGoal = nutritionSettings.macros?.carbs?.goal || 250
 
   return (
     <div className="space-y-3 fade-in">
@@ -135,7 +137,7 @@ export function HistoryModule() {
       <Card>
         <CardHeader className="pb-2 pt-4 px-4"><CardTitle className="text-sm">Pirâmide alimentar — últimos 7 dias</CardTitle></CardHeader>
         <CardContent className="px-4 pb-4 space-y-2">
-          {nutritionSettings.pyramidGroups.map(g => {
+          {(nutritionSettings.pyramidGroups || []).map(g => {
             let total = 0
             lastNDays(7).forEach(d => {
               const p = pyramidLogs.find(l => l.dayKey === d)

@@ -364,7 +364,7 @@ function PyramidSection() {
 
   const day = todayKey()
   const counts = pyramidLogs.find(p => p.dayKey === day)?.counts || {}
-  const groups = nutritionSettings.pyramidGroups
+  const groups = nutritionSettings.pyramidGroups || []
   const totalGoal = groups.reduce((s, g) => s + g.goal, 0)
   const totalCons = groups.reduce((s, g) => s + (counts[g.id] || 0), 0)
   const n = groups.length

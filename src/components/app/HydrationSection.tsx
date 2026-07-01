@@ -21,7 +21,7 @@ export function HydrationSection({ onOpenSettings }: Props) {
   const count = todayLog?.count || 0
 
   const waterGoal = nutritionSettings?.waterAutoCalc
-    ? Math.round((nutritionSettings.weight * 35) / nutritionSettings.cupSizeMl)
+    ? Math.round(((nutritionSettings?.weight || 70) * 35) / (nutritionSettings?.cupSizeMl || 250))
     : nutritionSettings?.waterGoalOverride || 8
 
   const pct = Math.min(1, count / waterGoal)

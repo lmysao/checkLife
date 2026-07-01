@@ -134,7 +134,7 @@ export const useStore = create<AppState>((set, get) => ({
         macrosLogs: (macros || []).map((m: any) => ({ dayKey: m.dayKey, carbs: m.carbs, protein: m.protein, fat: m.fat })),
         pyramidLogs: (pyramid || []).map((p: any) => ({ dayKey: p.dayKey, counts: typeof p.counts === "string" ? JSON.parse(p.counts) : p.counts })),
         gratitudeLogs: (gratitude || []).map((g: any) => ({ dayKey: g.dayKey, items: typeof g.items === "string" ? JSON.parse(g.items) : g.items })),
-        nutritionSettings: nutri?.id ? (typeof nutri.settings === "string" ? { ...nutri, settings: JSON.parse(nutri.settings) } : nutri) : defaultNutritionSettings(),
+        nutritionSettings: nutri?.id ? (typeof nutri.settings === "string" ? { ...defaultNutritionSettings(), ...JSON.parse(nutri.settings) } : { ...defaultNutritionSettings(), ...nutri }) : defaultNutritionSettings(),
       })
     } catch {
       set({ loaded: true, syncStatus: "error" })

@@ -31,12 +31,14 @@ export function Dashboard() {
   const mood = moodDailies.find(m => m.dayKey === day)
   const moodOpt = mood ? MOOD_OPTIONS.find(o => o.v === mood.value) : null
   const water = waterLogs.find(w => w.dayKey === day)?.count || 0
+  const w = nutritionSettings.weight || 70
+  const cs = nutritionSettings.cupSizeMl || 250
   const waterGoal = nutritionSettings.waterAutoCalc
-    ? Math.max(1, Math.round(Math.max(800, nutritionSettings.weight * 35) / nutritionSettings.cupSizeMl))
-    : nutritionSettings.waterGoalOverride
+    ? Math.max(1, Math.round(Math.max(800, w * 35) / cs))
+    : (nutritionSettings.waterGoalOverride || 8)
   const macros = macrosLogs.find(m => m.dayKey === day)
   const pyCounts = pyramidLogs.find(p => p.dayKey === day)?.counts || {}
-  const groups = nutritionSettings.pyramidGroups
+  const groups = nutritionSettings.pyramidGroups || []
   const totalPyGoal = groups.reduce((s, g) => s + g.goal, 0)
   const totalPyCons = groups.reduce((s, g) => s + (pyCounts[g.id] || 0), 0)
   const grat = (gratitudeLogs.find(g => g.dayKey === day)?.items || []).filter(x => x.trim()).length
@@ -66,7 +68,7 @@ export function Dashboard() {
       <div className="grid grid-cols-2 gap-2.5">
         <MiniCard label="Humor" value={moodOpt ? moodOpt.e : "—"} sub={moodOpt ? moodOpt.label : "sem registro"} />
         <MiniCard label="Água" value={`${water}/${waterGoal}`} sub={`${Math.round(water / waterGoal * 100)}%`} />
-        <MiniCard label="Carboidratos" value={`${macros?.carbs || 0}g`} sub={`${nutritionSettings.macros.carbs.goal}g meta`} />
+        <MiniCard label="Carboidratos" value={`${macros?.carbs || 0}g`} sub={`${nutritionSettings.macros?.carbs?.goal || 250}g meta`} />
         <MiniCard label="Tarefas" value={`${tasksDone}/${dayTasks.length}`} sub="concluídas" />
         <MiniCard label="Pirâmide" value={`${totalPyCons}/${totalPyGoal}`} sub="porções" />
         <MiniCard label="Gratidão" value={`${grat}/3`} sub={grat === 3 ? "completo" : "pendentes"} />

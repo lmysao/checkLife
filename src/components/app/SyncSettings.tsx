@@ -26,6 +26,12 @@ export function SyncSettings() {
   const _setSyncStatus = useStore(s => s._setSyncStatus)
   const initialized = useRef(false)
 
+  // Update global sync indicator based on Supabase connection
+  const applySyncStatus = (s: SyncStatusData) => {
+    if (!s.configured) return
+    _setSyncStatus(s.connected ? "synced" : "error")
+  }
+
   useEffect(() => {
     if (initialized.current) return
     initialized.current = true
@@ -34,12 +40,6 @@ export function SyncSettings() {
       applySyncStatus(data)
     }).catch(() => {})
   }, [])
-
-  // Update global sync indicator based on Supabase connection
-  const applySyncStatus = (s: SyncStatusData) => {
-    if (!s.configured) return
-    _setSyncStatus(s.connected ? "synced" : "error")
-  }
 
   const handleSave = async () => {
     if (!url || !key) return toast.error("Preencha URL e chave")

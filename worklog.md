@@ -1,4 +1,29 @@
 ---
+Task ID: 3
+Agent: Main
+Task: Fix Application error after Supabase config + defensive data handling
+
+Work Log:
+- Diagnosed crash: "Cannot read properties of undefined (reading 'reduce')" in Dashboard.tsx:40
+- Root cause: nutrition settings in SQLite were `{}` (empty object), making `pyramidGroups` undefined
+- Likely cause: Supabase import/restore overwrote settings with incomplete data
+- Fixed Dashboard.tsx: added `|| []` for pyramidGroups, `|| 70`/`|| 250` for weight/cupSizeMl, `?.` for macros
+- Fixed BemEstarModule.tsx: added `|| []` for pyramidGroups
+- Fixed HistoryModule.tsx: added fallbacks for weight, cupSizeMl, waterGoalOverride, macros, pyramidGroups
+- Fixed HydrationSection.tsx: added `|| 70`/`|| 250` fallbacks for weight/cupSizeMl
+- Fixed store.ts: nutritionSettings now merges with defaults: `{ ...defaultNutritionSettings(), ...nutri }`
+- Fixed SyncSettings.tsx lint error: moved `applySyncStatus` declaration before useEffect
+- Reset DB nutrition settings to proper defaults
+- Verified all tabs (Resumo, Bem-estar, Tarefas, Histórico) work correctly
+- Verified dark mode toggle works
+- Verified sync indicator always visible
+- Verified SyncSettings (Supabase backup) UI accessible in Histórico tab
+
+Stage Summary:
+- App no longer crashes on load when nutrition settings data is incomplete
+- All nutritionSettings access points now have defensive fallbacks
+- Store always merges loaded settings with defaults to prevent missing fields
+---
 Task ID: 2
 Agent: Main
 Task: Sync indicator, stacked group toggle, gratitude fix, full-year export
