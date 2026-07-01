@@ -1,0 +1,2824 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Ritual diário</title>
+
+<!-- ============ PWA / MOBILE META TAGS ============ -->
+<meta name="description" content="Acompanhe seus rituais diários, humor, hidratação, macros e pirâmide alimentar.">
+<meta name="theme-color" content="#C1502E" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#16120E" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Ritual">
+<meta name="application-name" content="Ritual">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">
+<link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Karla:ital,wght@0,400;0,500;0,700;1,400&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  /* ============ THEME: LIGHT (default) ============ */
+  :root{
+    --bg: #F1E4C9;
+    --bg-grad: radial-gradient(circle at 20% 0%, #F5EAD2 0%, #F1E4C9 55%);
+    --card: #FFFBF2;
+    --ink: #2B2117;
+    --ink-soft: #6B5D4D;
+    --line: #DCC9A0;
+    --accent: #C1502E;
+    --accent-soft: #C1502E22;
+    --radius: 16px;
+    --shadow: 0 1px 0 rgba(43,33,23,0.04);
+    --input-bg: #fff;
+    --overlay: rgba(43,33,23,0.45);
+  }
+  /* ============ THEME: DARK ============ */
+  [data-theme="dark"]{
+    --bg: #16120E;
+    --bg-grad: radial-gradient(circle at 20% 0%, #1F1A14 0%, #16120E 55%);
+    --card: #221C16;
+    --ink: #F1E4C9;
+    --ink-soft: #A8937A;
+    --line: #3A3128;
+    --accent: #E07A4F;
+    --accent-soft: #E07A4F22;
+    --shadow: 0 1px 0 rgba(0,0,0,0.4);
+    --input-bg: #2A231B;
+    --overlay: rgba(0,0,0,0.6);
+  }
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background: var(--bg-grad), var(--bg);
+    color: var(--ink);
+    font-family: 'Karla', sans-serif;
+    min-height: 100vh;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color .3s ease, color .3s ease;
+  }
+  .wrap{
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 18px 16px 96px;
+  }
+  header.top{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    gap: 8px;
+  }
+  header.top h1{
+    font-family:'Bricolage Grotesque', sans-serif;
+    font-weight:700;
+    font-size: 22px;
+    margin:0;
+    letter-spacing: -0.02em;
+  }
+  .top-actions{ display:flex; align-items:center; gap:6px; }
+  .icon-btn{
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--ink);
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+    padding:0;
+    transition: transform .15s ease, border-color .15s ease;
+  }
+  .icon-btn:hover{ transform: translateY(-1px); border-color: var(--accent); }
+  .icon-btn svg{ width:16px; height:16px; }
+  .sync{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 4px 8px;
+    border-radius: 20px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    color: var(--ink-soft);
+    white-space: nowrap;
+  }
+  .sync.ok::before{ content:"● "; color:#5C7A3A; }
+  .sync.off::before{ content:"● "; color:#B5566B; }
+
+  nav.tabs{
+    display:flex;
+    gap:6px;
+    overflow-x:auto;
+    padding-bottom: 6px;
+    margin-bottom: 16px;
+    scrollbar-width:none;
+    align-items:center;
+  }
+  nav.tabs::-webkit-scrollbar{ display:none; }
+  nav.tabs button.tab{
+    flex: 0 0 auto;
+    font-family:'Karla', sans-serif;
+    font-weight:700;
+    font-size: 13px;
+    padding: 8px 13px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--ink-soft);
+    cursor:pointer;
+    transition: all .18s ease;
+    display:flex; align-items:center; gap:6px;
+  }
+  nav.tabs button.tab:hover{ border-color: var(--accent); color: var(--ink); }
+  nav.tabs button.tab.active{
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #FFFBF2;
+  }
+  nav.tabs button.tab .dot{
+    width:6px; height:6px; border-radius:50%; background: currentColor; opacity:.5;
+  }
+  nav.tabs button.tab.active .dot{ opacity:1; background:#FFFBF2; }
+  nav.tabs .add-tab{
+    flex:0 0 auto;
+    width:32px; height:32px;
+    border-radius:50%;
+    border: 1px dashed var(--line);
+    background: transparent;
+    color: var(--ink-soft);
+    font-size:18px; line-height:1;
+    cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition: all .15s ease;
+  }
+  nav.tabs .add-tab:hover{ border-color: var(--accent); color: var(--accent); border-style:solid; }
+
+  .card{
+    background: var(--card);
+    border-radius: var(--radius);
+    border: 1px solid var(--line);
+    padding: 16px;
+    box-shadow: var(--shadow);
+  }
+  .card + .card{ margin-top: 12px; }
+
+  .module-head{
+    display:flex;
+    align-items:flex-end;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    gap: 8px;
+  }
+  .module-head h2{
+    font-family:'Bricolage Grotesque', sans-serif;
+    font-size: 19px;
+    margin:0;
+  }
+  .module-head .period{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-soft);
+    display:block;
+    margin-top:2px;
+  }
+  .frac{
+    font-family:'JetBrains Mono', monospace;
+    font-weight:600;
+    font-size: 15px;
+    color: var(--accent);
+    white-space:nowrap;
+  }
+  .bar{
+    height:6px;
+    border-radius: 4px;
+    background: var(--line);
+    overflow:hidden;
+    margin-bottom: 14px;
+  }
+  .bar > div{
+    height:100%;
+    background: var(--accent);
+    transition: width .35s ease;
+  }
+
+  ul.items{ list-style:none; margin:0; padding:0; }
+  ul.items li{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  ul.items li:last-child{ border-bottom:none; }
+
+  .stamp{
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    border: 2px solid var(--accent);
+    background: transparent;
+    cursor:pointer;
+    position:relative;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-family:'JetBrains Mono', monospace;
+    font-weight:700;
+    font-size:13px;
+    color: transparent;
+    transition: transform .18s ease, background .15s ease;
+  }
+  .stamp.checked{
+    background: var(--accent);
+    color:#FFFBF2;
+  }
+  .stamp.bump{ animation: bump .28s ease; }
+  @keyframes bump{
+    0%{ transform: scale(1) rotate(0deg); }
+    45%{ transform: scale(1.25) rotate(var(--tilt,-6deg)); }
+    100%{ transform: scale(1) rotate(0deg); }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .stamp.bump{ animation:none; }
+    .fade-in{ animation:none !important; }
+  }
+
+  .item-label{ flex:1; font-size: 15px; line-height:1.3; }
+  .item-label.done{ color: var(--ink-soft); text-decoration: line-through; text-decoration-color: var(--line); }
+
+  .edit-controls{ display:flex; gap:4px; flex:0 0 auto; }
+  .edit-controls button{
+    border:none;
+    background:none;
+    color: var(--ink-soft);
+    font-size:15px;
+    cursor:pointer;
+    padding:4px;
+    line-height:1;
+  }
+  .edit-controls button:hover{ color: var(--accent); }
+
+  .row-actions{
+    display:flex;
+    gap:8px;
+    margin-top: 14px;
+    flex-wrap:wrap;
+  }
+  .btn{
+    font-family:'Karla', sans-serif;
+    font-weight:700;
+    font-size: 13px;
+    padding: 9px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--ink);
+    cursor:pointer;
+    transition: all .15s ease;
+  }
+  .btn:hover{ border-color: var(--accent); }
+  .btn.primary{
+    background: var(--accent);
+    border-color: var(--accent);
+    color:#FFFBF2;
+  }
+  .btn.ghost{ color: var(--ink-soft); }
+  .btn.danger{ color: #B5566B; border-color: var(--line); }
+  .btn.danger:hover{ border-color:#B5566B; }
+
+  .add-row{
+    display:flex;
+    gap:8px;
+    margin-top: 12px;
+    flex-wrap:wrap;
+  }
+  .add-row input, .add-row select{
+    font-family:'Karla', sans-serif;
+    font-size: 14px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--input-bg);
+    color: var(--ink);
+  }
+  .add-row input{ flex:1; min-width: 120px; }
+  .add-row input:focus, .add-row select:focus{ outline: 2px solid var(--accent); outline-offset:1px; }
+
+  .pill{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    color: #fff;
+    text-transform: lowercase;
+  }
+
+  select.priority{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 11px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--input-bg);
+    padding: 4px 6px;
+    color: var(--ink-soft);
+  }
+
+  .mood-grid{ display:flex; gap:8px; justify-content:space-between; margin-bottom: 14px; }
+  .mood-grid button{
+    flex:1;
+    font-size: 26px;
+    background: var(--input-bg);
+    border: 2px solid var(--line);
+    border-radius: 12px;
+    padding: 10px 0;
+    cursor:pointer;
+    transition: all .18s ease;
+  }
+  .mood-grid button:hover{ transform: translateY(-2px); }
+  .mood-grid button.selected{
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    transform: translateY(-2px) scale(1.05);
+  }
+  textarea.note{
+    width:100%;
+    font-family:'Karla', sans-serif;
+    font-size: 14px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    padding: 10px 12px;
+    resize: vertical;
+    min-height: 60px;
+    background: var(--input-bg);
+    color: var(--ink);
+  }
+  textarea.note:focus{ outline: 2px solid var(--accent); outline-offset:1px; }
+
+  .hist-block{ margin-bottom: 18px; }
+  .hist-block:last-child{ margin-bottom:0; }
+  .hist-block h3{
+    font-family:'Bricolage Grotesque', sans-serif;
+    font-size: 15px;
+    margin: 0 0 8px;
+  }
+  .hist-row{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+  .hist-row .label{ width: 110px; font-size: 12px; color: var(--ink-soft); flex:0 0 auto; }
+  .hist-row .track{ flex:1; height:8px; border-radius:5px; background: var(--line); overflow:hidden; }
+  .hist-row .track > div{ height:100%; }
+  .hist-row .pct{ width: 38px; text-align:right; font-family:'JetBrains Mono', monospace; font-size:11px; color: var(--ink-soft); }
+
+  .streaks{ display:flex; flex-wrap:wrap; gap:8px; }
+  .streak-chip{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: var(--input-bg);
+    border: 1px solid var(--line);
+    color: var(--ink);
+  }
+  .streak-chip b{ display:block; font-size:16px; }
+
+  .mood-chart{ display:flex; align-items:flex-end; gap:4px; height: 70px; margin-bottom: 6px; }
+  .mood-chart .bar2{ flex:1; border-radius: 4px 4px 0 0; min-height:4px; transition: height .3s ease; }
+  .mood-chart-labels{ display:flex; gap:4px; font-family:'JetBrains Mono', monospace; font-size:9px; color:var(--ink-soft); }
+  .mood-chart-labels span{ flex:1; text-align:center; }
+
+  .empty{
+    color: var(--ink-soft);
+    font-size: 14px;
+    text-align:center;
+    padding: 18px 0;
+  }
+  .small-note{
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-top: 10px;
+  }
+
+  /* ============ DASHBOARD / RESUMO ============ */
+  .dash-hero{
+    background: var(--accent);
+    color: #FFFBF2;
+    border-color: var(--accent);
+  }
+  .dash-hero .module-head h2{ color:#FFFBF2; }
+  .dash-hero .module-head .period{ color: rgba(255,251,242,0.8); }
+  .dash-hero .big-pct{
+    font-family:'Bricolage Grotesque', sans-serif;
+    font-weight:700;
+    font-size: 44px;
+    line-height:1;
+    margin: 6px 0 4px;
+  }
+  .dash-hero .sub{ font-size: 12px; opacity:.85; }
+  .dash-hero .bar{ background: rgba(255,251,242,0.25); margin-top:10px; }
+  .dash-hero .bar > div{ background:#FFFBF2; }
+  .dash-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+  .dash-mini{
+    background: var(--card);
+    border:1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px;
+  }
+  .dash-mini .lbl{ font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.05em; font-family:'JetBrains Mono', monospace; }
+  .dash-mini .val{ font-family:'Bricolage Grotesque', sans-serif; font-weight:700; font-size:22px; margin-top:2px; }
+  .dash-mini .val small{ font-size:12px; color:var(--ink-soft); font-weight:400; }
+
+  /* water counter */
+  .water-row{ display:flex; align-items:center; gap:10px; margin: 4px 0 12px; }
+  .water-cups{ display:flex; gap:5px; flex:1; flex-wrap:wrap; }
+  .water-cup{
+    width: 30px; height: 38px;
+    border: 2px solid var(--line);
+    border-radius: 4px 4px 8px 8px;
+    background: transparent;
+    cursor:pointer;
+    position:relative;
+    transition: all .15s ease;
+  }
+  .water-cup::after{
+    content:"";
+    position:absolute;
+    left:0; right:0; bottom:0;
+    height:0%;
+    background: #5BA3D0;
+    border-radius: 0 0 5px 5px;
+    transition: height .25s ease;
+  }
+  .water-cup.filled::after{ height: 75%; }
+  .water-cup.filled{ border-color:#5BA3D0; }
+  .water-info{ font-family:'JetBrains Mono', monospace; font-size:12px; color:var(--ink-soft); white-space:nowrap; }
+
+  /* gratitude */
+  .grat-list{ display:flex; flex-direction:column; gap:8px; margin-bottom: 12px; }
+  .grat-item{
+    display:flex; align-items:center; gap:8px;
+  }
+  .grat-item .num{
+    flex:0 0 auto;
+    width:22px; height:22px;
+    border-radius:50%;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .grat-item input{
+    flex:1;
+    font-family:'Karla', sans-serif;
+    font-size:14px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--input-bg);
+    color: var(--ink);
+  }
+  .grat-item input:focus{ outline: 2px solid var(--accent); outline-offset:1px; }
+
+  /* fade-in animation */
+  .fade-in{ animation: fadeIn .28s ease; }
+  @keyframes fadeIn{
+    from{ opacity:0; transform: translateY(6px); }
+    to{ opacity:1; transform: translateY(0); }
+  }
+
+  /* ============ TOAST ============ */
+  #toastWrap{
+    position: fixed;
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%);
+    z-index: 999;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    pointer-events:none;
+    width: max-content;
+    max-width: 90vw;
+  }
+  .toast{
+    background: var(--ink);
+    color: var(--bg);
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight:600;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+    animation: toastIn .25s ease, toastOut .25s ease 2.2s forwards;
+    display:flex; align-items:center; gap:8px;
+  }
+  .toast.ok::before{ content:"✓"; color:#9BC97A; font-weight:700; }
+  .toast.warn::before{ content:"!"; color:#E0A23C; font-weight:700; }
+  @keyframes toastIn{ from{ opacity:0; transform: translateY(10px); } to{ opacity:1; transform: translateY(0); } }
+  @keyframes toastOut{ to{ opacity:0; transform: translateY(10px); } }
+
+  /* ============ MODAL ============ */
+  .modal-overlay{
+    position: fixed; inset:0;
+    background: var(--overlay);
+    display:flex; align-items:center; justify-content:center;
+    z-index: 998;
+    padding: 20px;
+    animation: fadeIn .2s ease;
+  }
+  .modal{
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 20px;
+    width: 100%;
+    max-width: 360px;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+  }
+  .modal h3{
+    font-family:'Bricolage Grotesque', sans-serif;
+    font-size: 18px;
+    margin: 0 0 12px;
+    position: sticky;
+    top: -20px;
+    background: var(--card);
+    padding: 20px 0 8px;
+    margin: -20px -20px 12px;
+    padding-left: 20px;
+    padding-right: 20px;
+    z-index: 1;
+  }
+  .modal-actions{
+    position: sticky;
+    bottom: -20px;
+    background: var(--card);
+    padding: 12px 0 4px;
+    margin: 0 -20px -20px;
+    padding-left: 20px;
+    padding-right: 20px;
+    display:flex;
+    gap:8px;
+    justify-content:flex-end;
+    flex-wrap:wrap;
+  }
+  .modal label{
+    display:block;
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-bottom: 4px;
+    font-family:'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing:.05em;
+  }
+  .modal input[type=text]{
+    width:100%;
+    font-family:'Karla', sans-serif;
+    font-size: 14px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--input-bg);
+    color: var(--ink);
+    margin-bottom: 12px;
+  }
+  .modal input[type=text]:focus{ outline: 2px solid var(--accent); outline-offset:1px; }
+  .modal .color-row{ display:flex; gap:8px; margin-bottom: 16px; flex-wrap:wrap; }
+  .modal .color-swatch{
+    width: 30px; height:30px; border-radius:50%;
+    border: 2px solid transparent;
+    cursor:pointer;
+    transition: transform .15s ease;
+  }
+  .modal .color-swatch:hover{ transform: scale(1.1); }
+  .modal .color-swatch.selected{ border-color: var(--ink); transform: scale(1.1); }
+  .modal-actions{ display:flex; gap:8px; justify-content:flex-end; }
+
+  /* tab close (custom) */
+  .tab-close{
+    margin-left: 4px;
+    font-size: 14px;
+    line-height: 1;
+    opacity: .5;
+    padding: 0 0 0 2px;
+  }
+  .tab-close:hover{ opacity: 1; color: #FFFBF2; }
+
+  /* sticky footer mini-status */
+  .mini-footer{
+    position: fixed;
+    left:0; right:0; bottom:0;
+    background: var(--card);
+    border-top: 1px solid var(--line);
+    padding: 8px 16px;
+    display:flex; align-items:center; justify-content:space-between;
+    font-family:'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    z-index: 50;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+  .mini-footer .right{ display:flex; gap:10px; align-items:center; }
+
+  /* ============ NUTRIÇÃO: HIDRATAÇÃO CONFIGURÁVEL ============ */
+  .water-display{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    margin: 4px 0 10px;
+  }
+  .water-ring{
+    flex:0 0 auto;
+    width: 84px; height: 84px;
+    position:relative;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .water-ring svg{ width:100%; height:100%; transform: rotate(-90deg); }
+  .water-ring .ring-bg{ fill:none; stroke:var(--line); stroke-width:8; }
+  .water-ring .ring-fg{ fill:none; stroke:#5BA3D0; stroke-width:8; stroke-linecap:round; transition: stroke-dashoffset .4s ease; }
+  .water-ring .ring-center{
+    position:absolute; inset:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    font-family:'JetBrains Mono', monospace;
+  }
+  .water-ring .ring-center b{ font-size:18px; line-height:1; }
+  .water-ring .ring-center small{ font-size:9px; color:var(--ink-soft); margin-top:2px; }
+  .water-info-block{ flex:1; min-width:0; }
+  .water-info-block .need{ font-size:13px; line-height:1.3; }
+  .water-info-block .need b{ font-family:'JetBrains Mono', monospace; color:var(--accent); }
+  .water-info-block .ml{ font-size:11px; color:var(--ink-soft); margin-top:2px; font-family:'JetBrains Mono', monospace; }
+  .water-cups-wrap{ display:flex; gap:5px; flex-wrap:wrap; margin: 6px 0 10px; justify-content:center; }
+  .water-cup{
+    width: 26px; height: 34px;
+    border: 2px solid var(--line);
+    border-radius: 3px 3px 7px 7px;
+    background: transparent;
+    cursor:pointer;
+    position:relative;
+    transition: all .15s ease;
+    padding:0;
+  }
+  .water-cup::after{
+    content:"";
+    position:absolute;
+    left:0; right:0; bottom:0;
+    height:0%;
+    background: #5BA3D0;
+    border-radius: 0 0 4px 4px;
+    transition: height .25s ease;
+  }
+  .water-cup.filled::after{ height: 78%; }
+  .water-cup.filled{ border-color:#5BA3D0; }
+  .water-cup:hover{ transform: translateY(-2px); }
+  .water-quick{ display:flex; gap:6px; flex-wrap:wrap; }
+  .water-quick .btn{ padding: 6px 10px; font-size:12px; }
+
+  /* ============ NUTRIÇÃO: MACROS ============ */
+  .macro-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .macro-row:last-child{ border-bottom:none; }
+  .macro-row .macro-dot{
+    flex:0 0 auto;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+  }
+  .macro-row .macro-label{
+    flex:0 0 auto;
+    width: 92px;
+    font-size: 13px;
+    font-weight:700;
+  }
+  .macro-row .macro-bar{
+    flex:1;
+    height: 8px;
+    border-radius: 5px;
+    background: var(--line);
+    overflow:hidden;
+    min-width: 40px;
+  }
+  .macro-row .macro-bar > div{ height:100%; transition: width .3s ease; }
+  .macro-row .macro-frac{
+    flex:0 0 auto;
+    font-family:'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--ink-soft);
+    white-space:nowrap;
+    width: 72px;
+    text-align:right;
+  }
+  .macro-row .macro-frac b{ color: var(--ink); }
+  .stepper{
+    display:flex;
+    align-items:center;
+    gap:4px;
+    flex:0 0 auto;
+  }
+  .stepper button{
+    width: 26px; height: 26px;
+    border-radius: 7px;
+    border: 1px solid var(--line);
+    background: var(--input-bg);
+    color: var(--ink);
+    cursor:pointer;
+    font-size: 14px;
+    line-height:1;
+    padding:0;
+    display:flex; align-items:center; justify-content:center;
+    transition: all .12s ease;
+  }
+  .stepper button:hover{ border-color: var(--accent); color: var(--accent); }
+  .stepper button:active{ transform: scale(0.92); }
+  .macro-add-row{
+    display:flex; gap:6px; flex-wrap:wrap;
+    margin-top: 10px;
+    align-items:center;
+  }
+  .macro-add-row select, .macro-add-row input{
+    font-family:'Karla', sans-serif;
+    font-size: 13px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--input-bg);
+    color: var(--ink);
+  }
+  .macro-add-row input{ width: 70px; }
+  .macro-quick-btns{ display:flex; gap:5px; flex-wrap:wrap; margin-top:8px; }
+  .macro-quick-btns button{
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;
+    padding: 5px 9px;
+    border-radius: 7px;
+    border: 1px solid var(--line);
+    background: var(--input-bg);
+    color: var(--ink-soft);
+    cursor:pointer;
+    transition: all .12s ease;
+  }
+  .macro-quick-btns button:hover{ border-color: var(--accent); color: var(--accent); }
+
+  /* ============ NUTRIÇÃO: PIRÂMIDE ALIMENTAR ============ */
+  .pyramid{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:3px;
+    margin: 8px 0 14px;
+  }
+  .pyramid-layer{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    color: #FFFBF2;
+    cursor:pointer;
+    transition: transform .15s ease, filter .15s ease;
+    min-height: 34px;
+  }
+  .pyramid-layer:hover{ transform: scale(1.02); filter: brightness(1.1); }
+  .pyramid-layer:active{ transform: scale(0.98); }
+  .pyramid-layer .pl-left{ display:flex; align-items:center; gap:6px; min-width:0; }
+  .pyramid-layer .pl-icon{ font-size: 16px; flex:0 0 auto; }
+  .pyramid-layer .pl-name{ font-size: 12px; font-weight:700; line-height:1.1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .pyramid-layer .pl-frac{ font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:700; flex:0 0 auto; }
+  .pyramid-layer .pl-edit{
+    flex:0 0 auto;
+    opacity:0;
+    font-size:13px;
+    margin-left:2px;
+    transition: opacity .15s ease;
+  }
+  .pyramid-layer:hover .pl-edit{ opacity:.8; }
+  .pyramid-legend{ font-size:11px; color:var(--ink-soft); text-align:center; margin-top:-4px; margin-bottom:8px; }
+  .pyramid-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+
+  /* ============ NUTRIÇÃO: SETTINGS MODAL ============ */
+  .nutri-modal{ max-width: 400px; }
+  .nutri-section{ margin-bottom: 18px; }
+  .nutri-section:last-child{ margin-bottom:0; }
+  .nutri-section h4{
+    font-family:'Bricolage Grotesque', sans-serif;
+    font-size: 14px;
+    margin: 0 0 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--line);
+  }
+  .nutri-field{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+  .nutri-field label{ font-size: 13px; color: var(--ink); flex:1; }
+  .nutri-field .hint{ font-size: 11px; color: var(--ink-soft); display:block; margin-top:2px; }
+  .nutri-field input[type=number]{
+    width: 80px;
+    font-family:'JetBrains Mono', monospace;
+    font-size: 14px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--input-bg);
+    color: var(--ink);
+    text-align:right;
+  }
+  .nutri-field input[type=number]:focus{ outline: 2px solid var(--accent); outline-offset:1px; }
+  .nutri-toggle{
+    display:flex; align-items:center; gap:8px;
+    font-size: 13px; cursor:pointer;
+  }
+  .nutri-toggle input{ width:16px; height:16px; accent-color: var(--accent); }
+  .pyramid-edit-list{ display:flex; flex-direction:column; gap:6px; max-height: 260px; overflow-y:auto; padding-right:4px; }
+  .pyramid-edit-item{
+    display:flex; align-items:center; gap:6px;
+    padding: 6px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--input-bg);
+  }
+  .pyramid-edit-item .pe-color{
+    width: 22px; height:22px; border-radius:50%;
+    border: none; padding:0; cursor:pointer;
+    flex:0 0 auto;
+    background-clip: padding-box;
+  }
+  .pyramid-edit-item input[type=text]{
+    flex:1; min-width:0;
+    font-size: 12px;
+    padding: 4px 6px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--card);
+    color: var(--ink);
+  }
+  .pyramid-edit-item input[type=number]{ width: 48px; font-size: 12px; padding: 4px 6px; border:1px solid var(--line); border-radius:6px; background: var(--card); color: var(--ink); text-align:right; }
+  .pyramid-edit-item .pe-icon{ width: 28px; font-size: 16px; text-align:center; }
+  .pyramid-edit-item .pe-del{
+    border:none; background:none; color:#B5566B; cursor:pointer; font-size:15px; padding:2px 4px; flex:0 0 auto;
+  }
+  .pyramid-edit-item .pe-handle{ color: var(--ink-soft); cursor: grab; flex:0 0 auto; font-size:12px; }
+  .nutri-add-group{ display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+  .nutri-add-group input{ flex:1; min-width:80px; font-size:12px; padding:6px 8px; border-radius:7px; border:1px solid var(--line); background:var(--card); color:var(--ink); }
+  .nutri-calc-note{
+    font-size: 11px;
+    color: var(--ink-soft);
+    background: var(--accent-soft);
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-top: 4px;
+    line-height: 1.4;
+  }
+  .nutri-calc-note b{ color: var(--accent); font-family:'JetBrains Mono', monospace; }
+
+  @media (max-width: 380px){
+    .wrap{ padding: 14px 12px 80px; }
+    header.top h1{ font-size: 19px; }
+    .dash-grid{ grid-template-columns: 1fr; }
+    .water-display{ flex-direction:column; gap:8px; }
+    .macro-row .macro-label{ width: 70px; font-size:12px; }
+  }
+
+  /* ============ TAREFAS: AGRUPAMENTO POR DATA ============ */
+  .task-group{ margin-bottom: 14px; }
+  .task-group:last-child{ margin-bottom: 0; }
+  .task-group-head{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin: 0 0 6px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: var(--input-bg);
+    border-left: 3px solid var(--line);
+  }
+  .task-group-head .tg-label{
+    font-family:'Bricolage Grotesque', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    flex:1;
+  }
+  .task-group-head .tg-count{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-soft);
+    background: var(--card);
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+  }
+  .task-group-head.overdue{ border-left-color: #B5566B; background: #B5566B11; }
+  .task-group-head.overdue .tg-label{ color: #B5566B; }
+  .task-group-head.today{ border-left-color: var(--accent); }
+  .task-group-head.today .tg-label{ color: var(--accent); }
+  .task-group-head.done-sec{ border-left-color: var(--line); opacity:.7; }
+  .task-group-head.done-sec .tg-label{ color: var(--ink-soft); }
+
+  /* date pill on each task — clickable to change date */
+  .task-date-pill{
+    flex: 0 0 auto;
+    font-family:'JetBrains Mono', monospace;
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--ink-soft);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all .15s ease;
+  }
+  .task-date-pill:hover{ border-color: var(--accent); color: var(--accent); }
+  .task-date-pill.overdue{ border-color: #B5566B; color: #B5566B; background: #B5566B11; }
+  .task-date-pill.today{ border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .task-date-pill input[type=date]{
+    position: absolute;
+    opacity: 0;
+    width: 0; height: 0;
+    border: none;
+    padding: 0;
+  }
+
+  /* task row: allow wrapping on small screens */
+  ul.items li.task-row{ flex-wrap: wrap; }
+  ul.items li.task-row .item-label{ min-width: 120px; }
+
+  /* add form with date */
+  .task-add-form{
+    display:flex;
+    gap:6px;
+    flex-wrap:wrap;
+    margin-top: 12px;
+    align-items:center;
+  }
+  .task-add-form input[type=text]{ flex:1; min-width: 120px; }
+  .task-add-form input[type=date],
+  .task-add-form select{
+    font-family:'Karla', sans-serif;
+    font-size: 13px;
+    padding: 9px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--input-bg);
+    color: var(--ink);
+  }
+  .task-quick-dates{ display:flex; gap:5px; flex-wrap:wrap; margin-top:8px; }
+  .task-quick-dates button{
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;
+    padding: 5px 10px;
+    border-radius: 7px;
+    border: 1px solid var(--line);
+    background: var(--input-bg);
+    color: var(--ink-soft);
+    cursor:pointer;
+    transition: all .12s ease;
+  }
+  .task-quick-dates button:hover{ border-color: var(--accent); color: var(--accent); }
+  .task-quick-dates button.active{ border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Ritual diário</h1>
+    <div class="top-actions">
+      <span class="sync off" id="syncBadge">offline</span>
+      <button class="icon-btn" id="themeToggle" aria-label="Alternar tema" title="Alternar tema">
+        <svg id="iconSun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+        <svg id="iconMoon" style="display:none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs"></nav>
+  <div id="moduleArea"></div>
+</div>
+
+<div class="mini-footer">
+  <span id="footerDate">—</span>
+  <span class="right">
+    <span id="footerProgress">0%</span>
+    <span>·</span>
+    <span id="footerStreak">🔥 0</span>
+  </span>
+</div>
+
+<div id="toastWrap"></div>
+<div id="modalRoot"></div>
+
+<script>
+/* ================== CONFIG ================== */
+const SUPABASE_URL = "https://mvbpdfzaypnlctspwsiw.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im12YnBkZnpheXBubGN0c3B3c2l3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1ODUzNDYsImV4cCI6MjA5ODE2MTM0Nn0.STVSWY1w34z94SX6JkUD2kzNiXtbI8LHDBxnKvLmuco";
+let sb = null;
+try{ sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }catch(e){ sb = null; }
+
+/* Built-in modules. Mental + Humor merged into "bemestar". */
+const MODULES = {
+  resumo:      { label: "Resumo",     kind: "dashboard",  accent: "#C1502E", builtin:true },
+  manha:       { label: "Manhã",      kind: "checklist",  period:"day",  accent: "#C1502E", defaults: ["Tomei banho","Lavei o rosto","Escovei os dentes","Usei fio dental","Cortei/limpei as unhas","Passei desodorante","Pentes/arrumei o cabelo"] },
+  bemestar:    { label: "Bem-estar",  kind: "mental_humor", period:"day", accent: "#3C6B5A", defaults: ["Dormi bem","Tomei água suficiente","Tomei sol / fui lá fora","Fiz uma pausa sem celular","Falei com alguém hoje","Respirei/meditei um pouco"] },
+  organizacao: { label: "Organização",kind: "checklist",  period:"day",  accent: "#6B7A3A", defaults: ["Guarda-roupa organizado","Roupas lavadas","Cama feita","Mesa organizada","Louça lavada","Lixo retirado"] },
+  noturno:     { label: "Noturno",    kind: "checklist",  period:"day",  accent: "#4A3B6B", defaults: ["Escovei os dentes","Lavei o rosto","Separei a roupa de amanhã","Carreguei o celular","Configurei o alarme"] },
+  semanal:     { label: "Semanal",    kind: "checklist",  period:"week", accent: "#9C6B2E", defaults: ["Troquei o lençol","Limpei o quarto/casa","Organizei o guarda-roupa a fundo","Cortei as unhas a fundo","Cortei/aparei o cabelo"] },
+  saida:       { label: "Saída",      kind: "checklist",  period:"day",  accent: "#B5566B", defaults: ["Passei perfume","Passei desodorante","Peguei carteira/documentos","Peguei celular e carregador","Peguei as chaves","Tranquei a porta","Levei garrafa de água","Conferi o tempo (chuva/frio)"] },
+  tarefas:     { label: "Tarefas",    kind: "tasks",       accent: "#2E6B62" },
+  historico:   { label: "Histórico",  kind: "history",     accent: "#5C4A3A" },
+};
+let MODULE_ORDER = ["resumo","manha","bemestar","organizacao","noturno","semanal","saida","tarefas","historico"];
+
+/* mood options reused by bemestar + history */
+const MOOD_OPTIONS = [
+  {v:1, e:"😞", label:"Muito ruim"},
+  {v:2, e:"🙁", label:"Ruim"},
+  {v:3, e:"😐", label:"Neutro"},
+  {v:4, e:"🙂", label:"Bom"},
+  {v:5, e:"😄", label:"Muito bom"}
+];
+
+/* ================== STATE & STORAGE ================== */
+let ONLINE = false;
+let editMode = {};
+let cache = loadCache();
+
+function loadCache(){
+  try{
+    const c = JSON.parse(localStorage.getItem("ritual_cache")) || {};
+    return {
+      items: c.items || [],
+      status: c.status || [],
+      tasks: c.tasks || [],
+      mood: c.mood || [],
+      water: c.water || [],          // {day_key, count}
+      gratitude: c.gratitude || [],  // {day_key, items:[3]}
+      customModules: c.customModules || [],  // {key,label,accent}
+      nutritionSettings: c.nutritionSettings || defaultNutritionSettings(),
+      macrosLog: c.macrosLog || [],        // {day_key, carbs, protein, fat}
+      pyramidLog: c.pyramidLog || [],      // {day_key, counts:{groupId:n}}
+    };
+  }catch(e){
+    return {
+      items:[], status:[], tasks:[], mood:[], water:[], gratitude:[],
+      customModules:[], nutritionSettings: defaultNutritionSettings(), macrosLog:[], pyramidLog:[]
+    };
+  }
+}
+/* default nutrition settings — sensible defaults that the user can override */
+function defaultNutritionSettings(){
+  return {
+    weight: 70,              // kg — used to auto-calc water need
+    cupSizeMl: 250,          // ml per cup
+    waterAutoCalc: true,     // if true, water goal = weight*35ml/cupSize
+    waterGoalOverride: 8,    // used when waterAutoCalc is false (copos)
+    macros: {
+      carbs:   { goal: 250, unit: "g" },
+      protein: { goal: 80,  unit: "g" },
+      fat:     { goal: 60,  unit: "g" },
+    },
+    pyramidGroups: [
+      { id:"g_acucar",  label:"Açúcares e gorduras", goal: 1, color:"#B5566B", icon:"🍭", note:"use com moderação" },
+      { id:"g_protei",  label:"Carnes, ovos, leite",  goal: 3, color:"#C1502E", icon:"🥩" },
+      { id:"g_frutas",  label:"Frutas",               goal: 3, color:"#D6A23C", icon:"🍎" },
+      { id:"g_verdur",  label:"Verduras e legumes",   goal: 4, color:"#6B7A3A", icon:"🥬" },
+      { id:"g_cereai",  label:"Cereais e grãos",      goal: 6, color:"#9C6B2E", icon:"🍞" },
+    ],
+  };
+}
+function saveCache(){ localStorage.setItem("ritual_cache", JSON.stringify(cache)); }
+
+/* merge custom modules into MODULES + MODULE_ORDER on load */
+function syncCustomModules(){
+  cache.customModules.forEach(cm=>{
+    if(!MODULES[cm.key]){
+      MODULES[cm.key] = { label: cm.label, kind:"checklist", period:"day", accent: cm.accent, custom:true };
+    }
+  });
+  // ensure order includes custom modules (after saida, before tarefas)
+  const customs = cache.customModules.map(c=>c.key);
+  MODULE_ORDER = ["resumo","manha","bemestar","organizacao","noturno","semanal","saida", ...customs, "tarefas","historico"];
+}
+/* push local custom modules to Supabase (upsert) so other devices see them */
+async function syncCustomModulesFromCache(){
+  if(!sb) return;
+  try{
+    for(const cm of cache.customModules){
+      await sb.from("custom_modules").upsert(
+        { key: cm.key, label: cm.label, accent: cm.accent },
+        { onConflict: "key" }
+      );
+    }
+  }catch(e){}
+}
+
+function todayKey(){
+  const d = new Date();
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+function weekKey(){
+  const d = new Date();
+  const onejan = new Date(d.getFullYear(),0,1);
+  const week = Math.ceil((((d - onejan) / 86400000) + onejan.getDay()+1) / 7);
+  return d.getFullYear()+"-W"+String(week).padStart(2,"0");
+}
+function periodKeyFor(moduleKey){
+  return MODULES[moduleKey].period === "week" ? weekKey() : todayKey();
+}
+
+/* ================== SUPABASE I/O (com fallback local) ================== */
+async function fetchAll(){
+  if(!sb){ setOnline(false); return; }
+  try{
+    const [items, status, tasks, mood, water, macros, pyramid, nutri, grat, customs] = await Promise.all([
+      sb.from("checklist_items").select("*").order("position"),
+      sb.from("checklist_status").select("*"),
+      sb.from("tasks").select("*").order("position"),
+      sb.from("mood_log").select("*"),
+      sb.from("water_log").select("*"),
+      sb.from("macros_log").select("*"),
+      sb.from("pyramid_log").select("*"),
+      sb.from("nutrition_settings").select("*").limit(1),
+      sb.from("gratitude_log").select("*"),
+      sb.from("custom_modules").select("*").order("created_at"),
+    ]);
+    if(items.error || status.error || tasks.error || mood.error) throw new Error("fetch error");
+    // core data (required)
+    cache.items = items.data;
+    cache.status = status.data;
+    cache.tasks = tasks.data;
+    cache.mood = mood.data;
+    // nutrition data (optional — if tables don't exist yet, silently keep local cache)
+    if(!water.error && water.data)  cache.water = water.data.map(r=>({day_key:r.day_key, count:r.count}));
+    if(!macros.error && macros.data) cache.macrosLog = macros.data.map(r=>({day_key:r.day_key, carbs:r.carbs||0, protein:r.protein||0, fat:r.fat||0}));
+    if(!pyramid.error && pyramid.data) cache.pyramidLog = pyramid.data.map(r=>({day_key:r.day_key, counts:r.counts||{}}));
+    if(!grat.error && grat.data) cache.gratitude = grat.data.map(r=>({day_key:r.day_key, items:r.items||["","",""]}));
+    if(!customs.error && customs.data) cache.customModules = customs.data.map(r=>({key:r.key, label:r.label, accent:r.accent}));
+    // nutrition settings — only overwrite if remote has real data (not empty {})
+    if(!nutri.error && nutri.data && nutri.data.length>0){
+      const remote = nutri.data[0].settings;
+      if(remote && Object.keys(remote).length > 0){
+        cache.nutritionSettings = Object.assign(defaultNutritionSettings(), remote);
+      }
+    }
+    saveCache();
+    setOnline(true);
+    await seedDefaultsIfNeeded();
+    await syncCustomModulesFromCache();
+  }catch(e){
+    setOnline(false);
+  }
+}
+function setOnline(v){
+  ONLINE = v;
+  const b = document.getElementById("syncBadge");
+  b.textContent = v ? "sincronizado" : "offline (local)";
+  b.className = "sync " + (v ? "ok" : "off");
+}
+
+async function seedDefaultsIfNeeded(){
+  if(localStorage.getItem("ritual_seeded_v2")) return;
+  let needsInsert = [];
+  for(const key of Object.keys(MODULES)){
+    const m = MODULES[key];
+    if(m.kind !== "checklist") continue;
+    if(m.custom) continue; // do not seed custom into supabase
+    const existing = cache.items.filter(i=>i.module===key);
+    if(existing.length === 0){
+      m.defaults.forEach((label, idx)=>{
+        needsInsert.push({ module:key, label, position: idx, active:true });
+      });
+    }
+  }
+  if(needsInsert.length){
+    const { data, error } = await sb.from("checklist_items").insert(needsInsert).select();
+    if(!error && data){
+      cache.items = cache.items.concat(data);
+      saveCache();
+    }
+  }
+  localStorage.setItem("ritual_seeded_v2","1");
+}
+
+async function addItem(moduleKey, label){
+  const existing = cache.items.filter(i=>i.module===moduleKey);
+  const position = existing.length ? Math.max(...existing.map(i=>i.position))+1 : 0;
+  const row = { module: moduleKey, label, position, active:true };
+  const m = MODULES[moduleKey];
+  if(m && m.custom){
+    row.id = "local-"+Date.now()+"-"+Math.random().toString(36).slice(2,6);
+    cache.items.push(row);
+  } else {
+    try{
+      const { data, error } = await sb.from("checklist_items").insert(row).select().single();
+      if(error) throw error;
+      cache.items.push(data);
+    }catch(e){
+      row.id = "local-"+Date.now();
+      cache.items.push(row);
+    }
+  }
+  saveCache();
+  render();
+}
+async function editItemLabel(id, label){
+  const it = cache.items.find(i=>i.id===id);
+  if(it) it.label = label;
+  saveCache();
+  try{ if(sb) await sb.from("checklist_items").update({label}).eq("id", id); }catch(e){}
+  render();
+}
+async function deleteItem(id){
+  cache.items = cache.items.filter(i=>i.id!==id);
+  cache.status = cache.status.filter(s=>s.item_id!==id);
+  saveCache();
+  try{ if(sb) await sb.from("checklist_items").delete().eq("id", id); }catch(e){}
+  render();
+}
+async function moveItem(moduleKey, id, dir){
+  const list = cache.items.filter(i=>i.module===moduleKey).sort((a,b)=>a.position-b.position);
+  const idx = list.findIndex(i=>i.id===id);
+  const swapIdx = idx + dir;
+  if(swapIdx < 0 || swapIdx >= list.length) return;
+  const a = list[idx], b = list[swapIdx];
+  const tmp = a.position; a.position = b.position; b.position = tmp;
+  saveCache();
+  try{
+    if(sb){
+      await sb.from("checklist_items").update({position:a.position}).eq("id", a.id);
+      await sb.from("checklist_items").update({position:b.position}).eq("id", b.id);
+    }
+  }catch(e){}
+  render();
+}
+
+async function toggleCheck(itemId, periodKey, btnEl){
+  let st = cache.status.find(s=>s.item_id===itemId && s.period_key===periodKey);
+  const newVal = st ? !st.checked : true;
+  if(st){ st.checked = newVal; } else { st = {item_id:itemId, period_key:periodKey, checked:newVal}; cache.status.push(st); }
+  saveCache();
+  if(btnEl && newVal){
+    btnEl.style.setProperty("--tilt", (Math.random()*10-5)+"deg");
+    btnEl.classList.add("bump");
+    setTimeout(()=>btnEl.classList.remove("bump"), 300);
+  }
+  render();
+  try{
+    if(sb) await sb.from("checklist_status").upsert(
+      { item_id: itemId, period_key: periodKey, checked: newVal, updated_at: new Date().toISOString() },
+      { onConflict: "item_id,period_key" }
+    );
+  }catch(e){}
+}
+
+async function resetModule(moduleKey){
+  if(!confirm("Resetar o checklist de \""+MODULES[moduleKey].label+"\" agora?")) return;
+  const periodKey = periodKeyFor(moduleKey);
+  const ids = cache.items.filter(i=>i.module===moduleKey).map(i=>i.id);
+  cache.status = cache.status.filter(s=> !(ids.includes(s.item_id) && s.period_key===periodKey));
+  saveCache();
+  render();
+  toast("Resetado","warn");
+  try{
+    if(sb) for(const id of ids){
+      await sb.from("checklist_status").upsert(
+        { item_id:id, period_key:periodKey, checked:false, updated_at:new Date().toISOString() },
+        { onConflict: "item_id,period_key" }
+      );
+    }
+  }catch(e){}
+}
+
+/* ===== date helpers (for tasks on other days) ===== */
+function dateOffsetKey(baseKey, days){
+  const [y,m,d] = baseKey.split("-").map(Number);
+  const dt = new Date(y, m-1, d);
+  dt.setDate(dt.getDate()+days);
+  return dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");
+}
+function endOfWeekKey(baseKey){
+  // week ends on Sunday
+  const [y,m,d] = baseKey.split("-").map(Number);
+  const dt = new Date(y, m-1, d);
+  const dow = dt.getDay(); // 0=Sun..6=Sat
+  const daysToSunday = (7 - dow) % 7;
+  dt.setDate(dt.getDate() + daysToSunday);
+  return dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");
+}
+function formatTaskDateLabel(dayKey){
+  const today = todayKey();
+  if(dayKey === today) return "hoje";
+  if(dayKey === dateOffsetKey(today, 1)) return "amanhã";
+  if(dayKey === dateOffsetKey(today, -1)) return "ontem";
+  const [y,m,d] = dayKey.split("-").map(Number);
+  const dt = new Date(y, m-1, d);
+  return dt.toLocaleDateString('pt-BR', {weekday:'short', day:'2-digit', month:'2-digit'});
+}
+
+async function addTask(label, priority, dayKey){
+  const day = dayKey || todayKey();
+  const existing = cache.tasks.filter(t=>t.day_key===day);
+  const position = existing.length ? Math.max(...existing.map(t=>t.position))+1 : 0;
+  const row = { label, done:false, position, day_key: day, priority: priority||"media" };
+  try{
+    const { data, error } = await sb.from("tasks").insert(row).select().single();
+    if(error) throw error;
+    cache.tasks.push(data);
+  }catch(e){
+    row.id = "local-"+Date.now();
+    cache.tasks.push(row);
+  }
+  saveCache();
+  render();
+  toast("Tarefa adicionada para "+formatTaskDateLabel(day),"ok");
+}
+async function toggleTask(id){
+  const t = cache.tasks.find(x=>x.id===id);
+  if(!t) return;
+  t.done = !t.done;
+  saveCache(); render();
+  try{ if(sb) await sb.from("tasks").update({done:t.done}).eq("id", id); }catch(e){}
+}
+async function deleteTask(id){
+  cache.tasks = cache.tasks.filter(t=>t.id!==id);
+  saveCache(); render();
+  try{ if(sb) await sb.from("tasks").delete().eq("id", id); }catch(e){}
+}
+async function moveTask(id, dir){
+  const t = cache.tasks.find(x=>x.id===id);
+  if(!t) return;
+  // reorder within the SAME day as the task
+  const list = cache.tasks.filter(x=>x.day_key===t.day_key).sort((a,b)=>a.position-b.position);
+  const idx = list.findIndex(x=>x.id===id);
+  const swapIdx = idx+dir;
+  if(swapIdx<0 || swapIdx>=list.length) return;
+  const a=list[idx], b=list[swapIdx];
+  const tmp=a.position; a.position=b.position; b.position=tmp;
+  saveCache(); render();
+  try{
+    if(sb){
+      await sb.from("tasks").update({position:a.position}).eq("id", a.id);
+      await sb.from("tasks").update({position:b.position}).eq("id", b.id);
+    }
+  }catch(e){}
+}
+async function moveTaskToDay(id, newDayKey){
+  const t = cache.tasks.find(x=>x.id===id);
+  if(!t || t.day_key === newDayKey) return;
+  const existing = cache.tasks.filter(x=>x.day_key===newDayKey && x.id!==id);
+  const position = existing.length ? Math.max(...existing.map(x=>x.position))+1 : 0;
+  t.day_key = newDayKey;
+  t.position = position;
+  saveCache(); render();
+  try{ if(sb) await sb.from("tasks").update({day_key:newDayKey, position}).eq("id", id); }catch(e){}
+  toast("Tarefa movida para "+formatTaskDateLabel(newDayKey),"ok");
+}
+
+async function setMood(value, note){
+  const day = todayKey();
+  let m = cache.mood.find(x=>x.day_key===day);
+  if(m){ m.value=value; m.note=note; } else { m = {day_key:day, value, note}; cache.mood.push(m); }
+  saveCache();
+  try{
+    if(sb) await sb.from("mood_log").upsert({ day_key: day, value, note }, { onConflict: "day_key" });
+  }catch(e){}
+  toast("Humor salvo","ok");
+}
+
+/* water + gratitude (localStorage only) */
+function getWater(day){
+  const w = cache.water.find(x=>x.day_key===day);
+  return w ? w.count : 0;
+}
+function setWater(count){
+  const day = todayKey();
+  let w = cache.water.find(x=>x.day_key===day);
+  if(w){ w.count = count; } else { cache.water.push({day_key:day, count}); }
+  saveCache();
+  try{ if(sb) sb.from("water_log").upsert({day_key:day, count, updated_at:new Date().toISOString()}, {onConflict:"day_key"}); }catch(e){}
+}
+function getGratitude(day){
+  const g = cache.gratitude.find(x=>x.day_key===day);
+  return g ? g.items : ["","",""];
+}
+function setGratitude(items){
+  const day = todayKey();
+  let g = cache.gratitude.find(x=>x.day_key===day);
+  if(g){ g.items = items; } else { cache.gratitude.push({day_key:day, items}); }
+  saveCache();
+  try{ if(sb) sb.from("gratitude_log").upsert({day_key:day, items, updated_at:new Date().toISOString()}, {onConflict:"day_key"}); }catch(e){}
+}
+
+/* ================== NUTRIÇÃO ================== */
+/* Water goal: auto from weight (35ml/kg) or manual override (in cups) */
+function getWaterGoalCups(){
+  const s = cache.nutritionSettings;
+  if(s.waterAutoCalc){
+    const ml = Math.max(800, s.weight * 35);  // floor 800ml safety
+    return Math.max(1, Math.round(ml / s.cupSizeMl));
+  }
+  return Math.max(1, s.waterGoalOverride || 8);
+}
+function getWaterGoalMl(){
+  return getWaterGoalCups() * cache.nutritionSettings.cupSizeMl;
+}
+function getWaterNeedMl(){
+  // raw need based on weight (for display, before rounding to cups)
+  return Math.max(800, Math.round(cache.nutritionSettings.weight * 35));
+}
+
+/* Macros: per-day grams consumed */
+function getMacros(day){
+  const m = cache.macrosLog.find(x=>x.day_key===day);
+  return m ? m : { carbs:0, protein:0, fat:0 };
+}
+function addMacro(field, grams){
+  const day = todayKey();
+  let m = cache.macrosLog.find(x=>x.day_key===day);
+  if(!m){ m = {day_key:day, carbs:0, protein:0, fat:0}; cache.macrosLog.push(m); }
+  m[field] = Math.max(0, (m[field]||0) + grams);
+  saveCache();
+  try{ if(sb) sb.from("macros_log").upsert({day_key:day, carbs:m.carbs, protein:m.protein, fat:m.fat, updated_at:new Date().toISOString()}, {onConflict:"day_key"}); }catch(e){}
+}
+function setMacro(field, grams){
+  const day = todayKey();
+  let m = cache.macrosLog.find(x=>x.day_key===day);
+  if(!m){ m = {day_key:day, carbs:0, protein:0, fat:0}; cache.macrosLog.push(m); }
+  m[field] = Math.max(0, grams);
+  saveCache();
+  try{ if(sb) sb.from("macros_log").upsert({day_key:day, carbs:m.carbs, protein:m.protein, fat:m.fat, updated_at:new Date().toISOString()}, {onConflict:"day_key"}); }catch(e){}
+}
+
+/* Pyramid: per-day portion counts per group */
+function getPyramidCounts(day){
+  const p = cache.pyramidLog.find(x=>x.day_key===day);
+  return p ? p.counts : {};
+}
+function addPyramidCount(groupId, delta){
+  const day = todayKey();
+  let p = cache.pyramidLog.find(x=>x.day_key===day);
+  if(!p){ p = {day_key:day, counts:{}}; cache.pyramidLog.push(p); }
+  p.counts[groupId] = Math.max(0, (p.counts[groupId]||0) + delta);
+  saveCache();
+  try{ if(sb) sb.from("pyramid_log").upsert({day_key:day, counts:p.counts, updated_at:new Date().toISOString()}, {onConflict:"day_key"}); }catch(e){}
+}
+function setPyramidCount(groupId, n){
+  const day = todayKey();
+  let p = cache.pyramidLog.find(x=>x.day_key===day);
+  if(!p){ p = {day_key:day, counts:{}}; cache.pyramidLog.push(p); }
+  p.counts[groupId] = Math.max(0, n);
+  saveCache();
+  try{ if(sb) sb.from("pyramid_log").upsert({day_key:day, counts:p.counts, updated_at:new Date().toISOString()}, {onConflict:"day_key"}); }catch(e){}
+}
+
+function saveNutritionSettings(newSettings){
+  cache.nutritionSettings = newSettings;
+  saveCache();
+  try{ if(sb) sb.from("nutrition_settings").upsert({id:1, settings:newSettings, updated_at:new Date().toISOString()}, {onConflict:"id"}); }catch(e){}
+}
+
+/* ================== CUSTOM MODULES ================== */
+function createCustomModule(label, accent){
+  const key = "custom_"+Date.now();
+  cache.customModules.push({ key, label, accent });
+  MODULES[key] = { label, kind:"checklist", period:"day", accent, custom:true };
+  MODULE_ORDER.splice(MODULE_ORDER.indexOf("tarefas"), 0, key);
+  saveCache();
+  try{ if(sb) sb.from("custom_modules").upsert({key, label, accent}, {onConflict:"key"}); }catch(e){}
+  render();
+  toast("Módulo criado","ok");
+}
+function deleteCustomModule(key){
+  if(!confirm("Excluir este módulo e todos os itens dele?")) return;
+  cache.customModules = cache.customModules.filter(c=>c.key!==key);
+  // collect item ids before removing them
+  const itemIds = cache.items.filter(i=>i.module===key).map(i=>i.id);
+  cache.items = cache.items.filter(i=>i.module!==key);
+  cache.status = cache.status.filter(s=> !itemIds.includes(s.item_id));
+  delete MODULES[key];
+  MODULE_ORDER = MODULE_ORDER.filter(k=>k!==key);
+  if(activeModule===key) activeModule = "resumo";
+  saveCache();
+  try{
+    if(sb){
+      sb.from("custom_modules").delete().eq("key", key);
+      if(itemIds.length){
+        sb.from("checklist_status").delete().in("item_id", itemIds);
+        sb.from("checklist_items").delete().eq("module", key);
+      }
+    }
+  }catch(e){}
+  render();
+  toast("Módulo excluído","warn");
+}
+
+/* ================== RENDER ================== */
+let activeModule = "resumo";
+
+function renderTabs(){
+  const nav = document.getElementById("tabs");
+  nav.innerHTML = "";
+  MODULE_ORDER.forEach(key=>{
+    const m = MODULES[key];
+    if(!m) return;
+    const b = document.createElement("button");
+    b.className = "tab" + (key===activeModule ? " active" : "");
+    b.innerHTML = `<span class="dot"></span>${escapeHtml(m.label)}` + (m.custom ? `<span class="tab-close" title="Excluir módulo">×</span>` : "");
+    b.onclick = (e)=>{
+      if(e.target.classList.contains("tab-close")){
+        e.stopPropagation();
+        deleteCustomModule(key);
+        return;
+      }
+      activeModule = key;
+      render();
+    };
+    nav.appendChild(b);
+  });
+  const add = document.createElement("button");
+  add.className = "add-tab";
+  add.textContent = "+";
+  add.title = "Criar novo módulo";
+  add.onclick = openCreateModuleModal;
+  nav.appendChild(add);
+}
+
+function setAccent(moduleKey){
+  const m = MODULES[moduleKey] || MODULES.resumo;
+  document.documentElement.style.setProperty("--accent", m.accent);
+  document.documentElement.style.setProperty("--accent-soft", m.accent+"22");
+}
+
+function render(){
+  renderTabs();
+  setAccent(activeModule);
+  const area = document.getElementById("moduleArea");
+  // CRITICAL FIX: always clear before rendering — prevents duplication
+  area.innerHTML = "";
+  const m = MODULES[activeModule];
+  if(!m){ renderDashboard(area); return; }
+  const wrap = document.createElement("div");
+  wrap.className = "fade-in";
+  area.appendChild(wrap);
+  if(m.kind === "dashboard") renderDashboard(wrap);
+  else if(m.kind === "checklist") renderChecklist(wrap, activeModule);
+  else if(m.kind === "tasks") renderTasks(wrap);
+  else if(m.kind === "mental_humor") renderMentalHumor(wrap);
+  else if(m.kind === "history") renderHistory(wrap);
+  updateFooter();
+}
+
+function renderChecklist(area, moduleKey){
+  const m = MODULES[moduleKey];
+  const periodKey = periodKeyFor(moduleKey);
+  const items = cache.items.filter(i=>i.module===moduleKey && i.active).sort((a,b)=>a.position-b.position);
+  const checkedCount = items.filter(i=>{
+    const st = cache.status.find(s=>s.item_id===i.id && s.period_key===periodKey);
+    return st && st.checked;
+  }).length;
+  const pct = items.length ? Math.round(checkedCount/items.length*100) : 0;
+
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = `
+    <div class="module-head">
+      <div>
+        <h2>${escapeHtml(m.label)}</h2>
+        <span class="period">${m.period==="week" ? "semana "+periodKey.split("-W")[1] : formatDateLabel()}</span>
+      </div>
+      <span class="frac">${checkedCount}/${items.length}</span>
+    </div>
+    <div class="bar"><div style="width:${pct}%"></div></div>
+    <ul class="items" id="list-${moduleKey}"></ul>
+    ${items.length===0 ? '<p class="empty">Nenhum item ainda. Adicione abaixo.</p>' : ""}
+    <div class="row-actions">
+      <button class="btn" id="editBtn-${moduleKey}">${editMode[moduleKey] ? "Concluir edição" : "Editar itens"}</button>
+      <button class="btn ghost" id="resetBtn-${moduleKey}">Resetar ${m.period==="week"?"semana":"dia"}</button>
+    </div>
+    ${editMode[moduleKey] ? `<div class="add-row"><input type="text" id="newItem-${moduleKey}" placeholder="Novo item..."><button class="btn primary" id="addBtn-${moduleKey}">Add</button></div>` : ""}
+  `;
+  area.appendChild(card);
+
+  const list = card.querySelector(`#list-${moduleKey}`);
+  items.forEach(it=>{
+    const st = cache.status.find(s=>s.item_id===it.id && s.period_key===periodKey);
+    const checked = st && st.checked;
+    const li = document.createElement("li");
+    li.innerHTML = `
+      <button class="stamp ${checked?'checked':''}" aria-label="marcar">${checked?'OK':''}</button>
+      <span class="item-label ${checked?'done':''}">${escapeHtml(it.label)}</span>
+      ${editMode[moduleKey] ? `<div class="edit-controls">
+        <button data-act="up" aria-label="subir">↑</button>
+        <button data-act="down" aria-label="descer">↓</button>
+        <button data-act="edit" aria-label="editar">✎</button>
+        <button data-act="del" aria-label="excluir">✕</button>
+      </div>` : ""}
+    `;
+    li.querySelector(".stamp").onclick = (e)=> toggleCheck(it.id, periodKey, e.currentTarget);
+    if(editMode[moduleKey]){
+      li.querySelector('[data-act="up"]').onclick = ()=> moveItem(moduleKey, it.id, -1);
+      li.querySelector('[data-act="down"]').onclick = ()=> moveItem(moduleKey, it.id, 1);
+      li.querySelector('[data-act="edit"]').onclick = ()=>{
+        const novo = prompt("Editar item:", it.label);
+        if(novo && novo.trim()) editItemLabel(it.id, novo.trim());
+      };
+      li.querySelector('[data-act="del"]').onclick = ()=>{
+        if(confirm("Remover este item?")) deleteItem(it.id);
+      };
+    }
+    list.appendChild(li);
+  });
+
+  card.querySelector(`#editBtn-${moduleKey}`).onclick = ()=>{
+    editMode[moduleKey] = !editMode[moduleKey];
+    render();
+  };
+  card.querySelector(`#resetBtn-${moduleKey}`).onclick = ()=> resetModule(moduleKey);
+  const addBtn = card.querySelector(`#addBtn-${moduleKey}`);
+  if(addBtn){
+    const input = card.querySelector(`#newItem-${moduleKey}`);
+    const submit = ()=>{
+      const v = input.value.trim();
+      if(v){ addItem(moduleKey, v); input.value=""; }
+    };
+    addBtn.onclick = submit;
+    input.onkeydown = (e)=>{ if(e.key==="Enter") submit(); };
+  }
+}
+
+function renderTasks(area){
+  const today = todayKey();
+  const tomorrow = dateOffsetKey(today, 1);
+  const eow = endOfWeekKey(today);
+  const allTasks = cache.tasks.slice();
+  const prioColor = { alta:"#B5566B", media:"#D6A23C", baixa:"#6B7A3A" };
+
+  // group definitions — order matters (top to bottom)
+  const groups = [
+    { key:"atrasadas", label:"⏰ Atrasadas", cls:"overdue",
+      filter: t => t.day_key < today && !t.done },
+    { key:"hoje", label:"📍 Hoje", cls:"today",
+      filter: t => t.day_key === today },
+    { key:"amanha", label:"➡ Amanhã", cls:"",
+      filter: t => t.day_key === tomorrow },
+    { key:"semana", label:"🗓 Esta semana", cls:"",
+      filter: t => t.day_key > tomorrow && t.day_key <= eow },
+    { key:"proximas", label:"📅 Próximas", cls:"",
+      filter: t => t.day_key > eow },
+    { key:"concluidas", label:"✓ Concluídas (anteriores)", cls:"done-sec",
+      filter: t => t.day_key < today && t.done },
+  ];
+
+  // compute group contents
+  const grouped = groups.map(g => ({
+    ...g,
+    tasks: allTasks.filter(g.filter).sort((a,b)=>{
+      if(a.day_key !== b.day_key) return a.day_key < b.day_key ? -1 : 1;
+      return a.position - b.position;
+    }),
+  })).filter(g => g.tasks.length > 0);
+
+  // today's progress (for the hero bar)
+  const todayTasks = allTasks.filter(t => t.day_key === today);
+  const todayDone = todayTasks.filter(t => t.done).length;
+  const totalOpen = allTasks.filter(t => !t.done).length;
+
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = `
+    <div class="module-head">
+      <div><h2>Tarefas</h2><span class="period">${formatDateLabel()} · ${totalOpen} em aberto</span></div>
+      <span class="frac">${todayDone}/${todayTasks.length}</span>
+    </div>
+    <div class="bar"><div style="width:${todayTasks.length?Math.round(todayDone/todayTasks.length*100):0}%"></div></div>
+    <div id="taskGroups"></div>
+    ${grouped.length===0 ? '<p class="empty">Nenhuma tarefa. Adicione abaixo. 🎯</p>' : ""}
+    <div class="task-add-form">
+      <input type="text" id="newTask" placeholder="Nova tarefa..." maxlength="120">
+      <input type="date" id="newTaskDate" value="${today}">
+      <select class="priority" id="taskPriority">
+        <option value="baixa">baixa</option>
+        <option value="media" selected>média</option>
+        <option value="alta">alta</option>
+      </select>
+      <button class="btn primary" id="addTaskBtn">Add</button>
+    </div>
+    <div class="task-quick-dates" id="quickDates">
+      <button data-d="today">hoje</button>
+      <button data-d="tomorrow">amanhã</button>
+      <button data-d="+3">em 3 dias</button>
+      <button data-d="+7">próx. semana</button>
+    </div>
+  `;
+  area.appendChild(card);
+
+  // render groups
+  const groupsEl = card.querySelector("#taskGroups");
+  grouped.forEach(g => {
+    const gDone = g.tasks.filter(t=>t.done).length;
+    const gEl = document.createElement("div");
+    gEl.className = "task-group";
+    gEl.innerHTML = `<div class="task-group-head ${g.cls}"><span class="tg-label">${escapeHtml(g.label)}</span><span class="tg-count">${gDone}/${g.tasks.length}</span></div>`;
+    const ul = document.createElement("ul");
+    ul.className = "items";
+    g.tasks.forEach(t => {
+      const li = document.createElement("li");
+      li.className = "task-row";
+      const isOverdue = t.day_key < today && !t.done;
+      const isToday = t.day_key === today;
+      const dateCls = isOverdue ? "overdue" : (isToday ? "today" : "");
+      li.innerHTML = `
+        <button class="stamp ${t.done?'checked':''}" aria-label="marcar">${t.done?'OK':''}</button>
+        <span class="item-label ${t.done?'done':''}">${escapeHtml(t.label)}</span>
+        <label class="task-date-pill ${dateCls}" title="mudar data">
+          ${escapeHtml(formatTaskDateLabel(t.day_key))}
+          <input type="date" value="${t.day_key}" data-task="${t.id}">
+        </label>
+        <span class="pill" style="background:${prioColor[t.priority]||'#6B5D4D'}">${escapeHtml(t.priority)}</span>
+        <div class="edit-controls">
+          <button data-act="up" aria-label="subir">↑</button>
+          <button data-act="down" aria-label="descer">↓</button>
+          <button data-act="del" aria-label="excluir">✕</button>
+        </div>
+      `;
+      li.querySelector(".stamp").onclick = (e)=>{
+        toggleTask(t.id);
+        e.currentTarget.classList.add("bump");
+        setTimeout(()=>e.currentTarget.classList.remove("bump"),300);
+      };
+      li.querySelector('[data-act="up"]').onclick = ()=> moveTask(t.id, -1);
+      li.querySelector('[data-act="down"]').onclick = ()=> moveTask(t.id, 1);
+      li.querySelector('[data-act="del"]').onclick = ()=>{ if(confirm("Remover tarefa?")) deleteTask(t.id); };
+      // date pill → open native date picker
+      const dateInput = li.querySelector('input[type=date]');
+      li.querySelector('.task-date-pill').onclick = (e)=>{
+        if(e.target === dateInput) return; // let the input handle its own click
+        e.preventDefault();
+        if(dateInput.showPicker) dateInput.showPicker();
+        else dateInput.click();
+      };
+      dateInput.onchange = ()=>{
+        if(dateInput.value && dateInput.value !== t.day_key){
+          moveTaskToDay(t.id, dateInput.value);
+        }
+      };
+      ul.appendChild(li);
+    });
+    gEl.appendChild(ul);
+    groupsEl.appendChild(gEl);
+  });
+
+  // add form
+  const addBtn = card.querySelector("#addTaskBtn");
+  const input = card.querySelector("#newTask");
+  const dateInput = card.querySelector("#newTaskDate");
+  const prio = card.querySelector("#taskPriority");
+  const submit = ()=>{
+    const v = input.value.trim();
+    if(v){ addTask(v, prio.value, dateInput.value || today); input.value=""; }
+  };
+  addBtn.onclick = submit;
+  input.onkeydown = (e)=>{ if(e.key==="Enter") submit(); };
+
+  // quick date buttons
+  const quickEl = card.querySelector("#quickDates");
+  const setActive = (key) => {
+    quickEl.querySelectorAll("button").forEach(b=>b.classList.toggle("active", b.dataset.d===key));
+  };
+  setActive("today");
+  quickEl.querySelectorAll("button").forEach(b=>{
+    b.onclick = ()=>{
+      const d = b.dataset.d;
+      let key;
+      if(d==="today") key = today;
+      else if(d==="tomorrow") key = tomorrow;
+      else if(d.startsWith("+")) key = dateOffsetKey(today, parseInt(d.slice(1),10));
+      if(key){ dateInput.value = key; setActive(d); }
+    };
+  });
+  dateInput.onchange = ()=>{ setActive(null); };
+}
+
+/* ============ MERGED MENTAL + HUMOR VIEW ============ */
+function renderMentalHumor(area){
+  const moduleKey = "bemestar";
+  const m = MODULES[moduleKey];
+  const periodKey = periodKeyFor(moduleKey);
+  const day = todayKey();
+  const items = cache.items.filter(i=>i.module===moduleKey && i.active).sort((a,b)=>a.position-b.position);
+  const checkedCount = items.filter(i=>{
+    const st = cache.status.find(s=>s.item_id===i.id && s.period_key===periodKey);
+    return st && st.checked;
+  }).length;
+  const pct = items.length ? Math.round(checkedCount/items.length*100) : 0;
+  const current = cache.mood.find(x=>x.day_key===day);
+
+  /* --- Card 1: Mental checklist --- */
+  const c1 = document.createElement("div");
+  c1.className = "card";
+  c1.innerHTML = `
+    <div class="module-head">
+      <div><h2>Bem-estar mental</h2><span class="period">${formatDateLabel()}</span></div>
+      <span class="frac">${checkedCount}/${items.length}</span>
+    </div>
+    <div class="bar"><div style="width:${pct}%"></div></div>
+    <ul class="items" id="list-${moduleKey}"></ul>
+    ${items.length===0 ? '<p class="empty">Nenhum item ainda.</p>' : ""}
+    <div class="row-actions">
+      <button class="btn" id="editBtn-${moduleKey}">${editMode[moduleKey] ? "Concluir edição" : "Editar itens"}</button>
+    </div>
+    ${editMode[moduleKey] ? `<div class="add-row"><input type="text" id="newItem-${moduleKey}" placeholder="Novo item..."><button class="btn primary" id="addBtn-${moduleKey}">Add</button></div>` : ""}
+  `;
+  area.appendChild(c1);
+
+  const list = c1.querySelector(`#list-${moduleKey}`);
+  items.forEach(it=>{
+    const st = cache.status.find(s=>s.item_id===it.id && s.period_key===periodKey);
+    const checked = st && st.checked;
+    const li = document.createElement("li");
+    li.innerHTML = `
+      <button class="stamp ${checked?'checked':''}" aria-label="marcar">${checked?'OK':''}</button>
+      <span class="item-label ${checked?'done':''}">${escapeHtml(it.label)}</span>
+      ${editMode[moduleKey] ? `<div class="edit-controls">
+        <button data-act="up">↑</button>
+        <button data-act="down">↓</button>
+        <button data-act="edit">✎</button>
+        <button data-act="del">✕</button>
+      </div>` : ""}
+    `;
+    li.querySelector(".stamp").onclick = (e)=> toggleCheck(it.id, periodKey, e.currentTarget);
+    if(editMode[moduleKey]){
+      li.querySelector('[data-act="up"]').onclick = ()=> moveItem(moduleKey, it.id, -1);
+      li.querySelector('[data-act="down"]').onclick = ()=> moveItem(moduleKey, it.id, 1);
+      li.querySelector('[data-act="edit"]').onclick = ()=>{
+        const novo = prompt("Editar item:", it.label);
+        if(novo && novo.trim()) editItemLabel(it.id, novo.trim());
+      };
+      li.querySelector('[data-act="del"]').onclick = ()=>{
+        if(confirm("Remover este item?")) deleteItem(it.id);
+      };
+    }
+    list.appendChild(li);
+  });
+  c1.querySelector(`#editBtn-${moduleKey}`).onclick = ()=>{ editMode[moduleKey] = !editMode[moduleKey]; render(); };
+  const addBtn = c1.querySelector(`#addBtn-${moduleKey}`);
+  if(addBtn){
+    const input = c1.querySelector(`#newItem-${moduleKey}`);
+    const submit = ()=>{ const v = input.value.trim(); if(v){ addItem(moduleKey, v); input.value=""; } };
+    addBtn.onclick = submit;
+    input.onkeydown = (e)=>{ if(e.key==="Enter") submit(); };
+  }
+
+  /* --- Card 2: Humor --- */
+  const c2 = document.createElement("div");
+  c2.className = "card";
+  c2.innerHTML = `
+    <div class="module-head"><div><h2>Humor do dia</h2><span class="period">${formatDateLabel()}</span></div></div>
+    <div class="mood-grid" id="moodGrid"></div>
+    <textarea class="note" id="moodNote" placeholder="Algo que queira anotar sobre hoje (opcional)">${current ? escapeHtml(current.note||"") : ""}</textarea>
+    <div class="row-actions"><button class="btn primary" id="saveMood">Salvar humor</button></div>
+  `;
+  area.appendChild(c2);
+  const grid = c2.querySelector("#moodGrid");
+  let selected = current ? current.value : null;
+  MOOD_OPTIONS.forEach(o=>{
+    const b = document.createElement("button");
+    b.textContent = o.e;
+    b.title = o.label;
+    if(selected===o.v) b.classList.add("selected");
+    b.onclick = ()=>{
+      selected=o.v;
+      grid.querySelectorAll("button").forEach(x=>x.classList.remove("selected"));
+      b.classList.add("selected");
+    };
+    grid.appendChild(b);
+  });
+  c2.querySelector("#saveMood").onclick = ()=>{
+    if(!selected){ toast("Escolha um humor primeiro","warn"); return; }
+    setMood(selected, c2.querySelector("#moodNote").value.trim());
+    render();
+  };
+
+  /* --- Card 3: Hidratação configurável --- */
+  const waterGoal = getWaterGoalCups();
+  const water = getWater(day);
+  const waterMl = water * cache.nutritionSettings.cupSizeMl;
+  const waterNeedMl = getWaterNeedMl();
+  const waterPct = waterGoal ? Math.min(100, Math.round(water/waterGoal*100)) : 0;
+  const c3 = document.createElement("div");
+  c3.className = "card";
+  // ring SVG (circumference for r=36 → 2*PI*36 ≈ 226)
+  const RING_C = 2 * Math.PI * 36;
+  const ringOffset = RING_C * (1 - waterPct/100);
+  c3.innerHTML = `
+    <div class="module-head">
+      <div><h2>Hidratação</h2><span class="period">${cache.nutritionSettings.waterAutoCalc ? "meta automática (peso)" : "meta manual"}</span></div>
+      <button class="btn ghost" id="waterConfigBtn" style="padding:5px 10px;font-size:12px;">⚙ Configurar</button>
+    </div>
+    <div class="water-display">
+      <div class="water-ring">
+        <svg viewBox="0 0 84 84">
+          <circle class="ring-bg" cx="42" cy="42" r="36"/>
+          <circle class="ring-fg" cx="42" cy="42" r="36" stroke-dasharray="${RING_C}" stroke-dashoffset="${ringOffset}"/>
+        </svg>
+        <div class="ring-center"><b>${water}</b><small>/${waterGoal} copos</small></div>
+      </div>
+      <div class="water-info-block">
+        <div class="need">Você precisa de <b>${waterGoal} copos</b> (${getWaterGoalMl()} ml) por dia.</div>
+        <div class="ml">Tomou: ${water} copos · ${waterMl} ml de ${getWaterGoalMl()} ml</div>
+        ${water >= waterGoal ? '<div class="ml" style="color:#5C7A3A;font-weight:700;">✓ Meta de hidratação atingida!</div>' : `<div class="ml">Faltam: ${waterGoal-water} copos (${(waterGoal-water)*cache.nutritionSettings.cupSizeMl} ml)</div>`}
+        <div class="ml" style="margin-top:4px;opacity:.7;">base: ${cache.nutritionSettings.weight} kg × 35 ml = ${waterNeedMl} ml/dia</div>
+      </div>
+    </div>
+    <div class="water-cups-wrap" id="waterCups"></div>
+    <div class="water-quick">
+      <button class="btn" data-w="+1">+1 copo</button>
+      <button class="btn" data-w="-1">−1</button>
+      <button class="btn ghost" data-w="0">Zerar</button>
+    </div>
+  `;
+  area.appendChild(c3);
+  const cupsWrap = c3.querySelector("#waterCups");
+  // render dynamic number of cups based on goal (cap at 16 for layout sanity)
+  const cupDisplay = Math.min(16, Math.max(waterGoal, water));
+  for(let i=1;i<=cupDisplay;i++){
+    const cup = document.createElement("button");
+    cup.className = "water-cup" + (i<=water ? " filled" : "");
+    cup.setAttribute("aria-label","copo "+i);
+    if(i > waterGoal){
+      cup.style.borderColor = "var(--line)";
+      cup.style.opacity = "0.5";
+      cup.title = "além da meta";
+    }
+    cup.onclick = ()=>{
+      const cur = getWater(day);
+      const next = (i<=cur) ? i-1 : i;
+      setWater(next);
+      render();
+    };
+    cupsWrap.appendChild(cup);
+  }
+  if(cupDisplay < water){
+    const more = document.createElement("span");
+    more.className = "small-note";
+    more.style.alignSelf = "center";
+    more.textContent = "+"+(water-cupDisplay)+" copos";
+    cupsWrap.appendChild(more);
+  }
+  c3.querySelectorAll(".water-quick button").forEach(btn=>{
+    btn.onclick = ()=>{
+      const w = btn.dataset.w;
+      const cur = getWater(day);
+      if(w==="0") setWater(0);
+      else setWater(Math.max(0, cur + parseInt(w,10)));
+      render();
+    };
+  });
+  c3.querySelector("#waterConfigBtn").onclick = openNutritionSettingsModal;
+
+  /* --- Card 4: Macros (carboidratos + proteína + gordura) --- */
+  const macros = getMacros(day);
+  const macroCfg = cache.nutritionSettings.macros;
+  const macroMeta = [
+    { key:"carbs",   label:"Carboidratos", color:"#D6A23C" },
+    { key:"protein", label:"Proteínas",    color:"#C1502E" },
+    { key:"fat",     label:"Gorduras",     color:"#9C6B2E" },
+  ];
+  const c4 = document.createElement("div");
+  c4.className = "card";
+  c4.innerHTML = `
+    <div class="module-head">
+      <div><h2>Macros</h2><span class="period">meta vs consumido (g)</span></div>
+      <button class="btn ghost" id="macroConfigBtn" style="padding:5px 10px;font-size:12px;">⚙</button>
+    </div>
+    <div id="macroRows"></div>
+    <div class="macro-quick-btns" id="carbQuick"></div>
+    <div class="macro-add-row">
+      <select id="macroSelect">
+        <option value="carbs">Carboidratos</option>
+        <option value="protein">Proteínas</option>
+        <option value="fat">Gorduras</option>
+      </select>
+      <input type="number" id="macroGrams" placeholder="g" min="0" step="1" value="15">
+      <button class="btn primary" id="macroAdd" style="padding:7px 12px;font-size:12px;">+ Adicionar</button>
+    </div>
+  `;
+  area.appendChild(c4);
+  const macroRowsEl = c4.querySelector("#macroRows");
+  macroMeta.forEach(mm=>{
+    const goal = macroCfg[mm.key].goal;
+    const cons = macros[mm.key] || 0;
+    const pct = goal ? Math.min(100, Math.round(cons/goal*100)) : 0;
+    const row = document.createElement("div");
+    row.className = "macro-row";
+    row.innerHTML = `
+      <span class="macro-dot" style="background:${mm.color}"></span>
+      <span class="macro-label">${escapeHtml(mm.label)}</span>
+      <div class="macro-bar"><div style="width:${pct}%; background:${mm.color}"></div></div>
+      <span class="macro-frac"><b>${cons}</b>/${goal}g</span>
+      <div class="stepper">
+        <button data-m="${mm.key}" data-d="-5" aria-label="menos 5">−</button>
+        <button data-m="${mm.key}" data-d="5" aria-label="mais 5">+</button>
+      </div>
+    `;
+    row.querySelectorAll(".stepper button").forEach(b=>{
+      b.onclick = ()=>{ addMacro(b.dataset.m, parseInt(b.dataset.d,10)); render(); };
+    });
+    macroRowsEl.appendChild(row);
+  });
+  // quick-add buttons for carbs (most common)
+  const carbQuick = c4.querySelector("#carbQuick");
+  [5, 10, 15, 25, 40].forEach(g=>{
+    const b = document.createElement("button");
+    b.textContent = "+"+g+"g carb";
+    b.onclick = ()=>{ addMacro("carbs", g); toast("+"+g+"g carboidratos","ok"); render(); };
+    carbQuick.appendChild(b);
+  });
+  c4.querySelector("#macroAdd").onclick = ()=>{
+    const sel = c4.querySelector("#macroSelect").value;
+    const g = parseInt(c4.querySelector("#macroGrams").value, 10);
+    if(!g || g<=0){ toast("Informe gramas válidas","warn"); return; }
+    addMacro(sel, g);
+    render();
+  };
+  c4.querySelector("#macroGrams").onkeydown = (e)=>{ if(e.key==="Enter") c4.querySelector("#macroAdd").click(); };
+  c4.querySelector("#macroConfigBtn").onclick = openNutritionSettingsModal;
+
+  /* --- Card 5: Pirâmide alimentar --- */
+  const groups = cache.nutritionSettings.pyramidGroups;
+  const pyCounts = getPyramidCounts(day);
+  // total portions goal + consumed
+  const totalGoal = groups.reduce((s,g)=>s+g.goal,0);
+  const totalCons = groups.reduce((s,g)=>s+(pyCounts[g.id]||0),0);
+  const c5 = document.createElement("div");
+  c5.className = "card";
+  c5.innerHTML = `
+    <div class="module-head">
+      <div><h2>Pirâmide alimentar</h2><span class="period">${totalCons}/${totalGoal} porções hoje</span></div>
+      <button class="btn ghost" id="pyramidConfigBtn" style="padding:5px 10px;font-size:12px;">⚙</button>
+    </div>
+    <div class="pyramid" id="pyramid"></div>
+    <p class="pyramid-legend">Toque em um grupo para registrar uma porção consumida</p>
+    <div class="pyramid-actions">
+      <button class="btn ghost" id="pyramidReset">Zerar dia</button>
+      <button class="btn" id="pyramidUndo">− última porção</button>
+    </div>
+  `;
+  area.appendChild(c5);
+  const pyEl = c5.querySelector("#pyramid");
+  // layers from top (smallest, index 0) to bottom (largest, last)
+  // width scales from 40% (top) to 100% (bottom)
+  const nGroups = groups.length;
+  groups.forEach((g, idx)=>{
+    const cons = pyCounts[g.id] || 0;
+    const pct = g.goal ? Math.min(100, Math.round(cons/g.goal*100)) : 0;
+    const widthPct = 40 + (idx/(Math.max(1,nGroups-1))) * 60;  // 40% → 100%
+    const layer = document.createElement("div");
+    layer.className = "pyramid-layer";
+    layer.setAttribute("role", "button");
+    layer.setAttribute("tabindex", "0");
+    layer.setAttribute("aria-label", g.label + ": " + cons + " de " + g.goal + " porções. Toque para adicionar.");
+    layer.style.width = widthPct + "%";
+    layer.style.background = g.color;
+    layer.title = (g.note ? g.note+" · " : "") + "meta: "+g.goal+" porções";
+    layer.innerHTML = `
+      <div class="pl-left">
+        <span class="pl-icon">${g.icon||"•"}</span>
+        <span class="pl-name">${escapeHtml(g.label)}</span>
+      </div>
+      <span class="pl-frac">${cons}/${g.goal}</span>
+      <span class="pl-edit">✎</span>
+    `;
+    layer.onclick = (e)=>{
+      if(e.target.classList.contains("pl-edit")){
+        e.stopPropagation();
+        const novo = prompt("Meta de porções para \""+g.label+"\":", g.goal);
+        if(novo !== null){
+          const n = parseInt(novo,10);
+          if(!isNaN(n) && n>=0){ g.goal = n; saveCache(); render(); }
+        }
+        return;
+      }
+      addPyramidCount(g.id, +1);
+      render();
+    };
+    layer.oncontextmenu = (e)=>{
+      e.preventDefault();
+      addPyramidCount(g.id, -1);
+      render();
+    };
+    layer.onkeydown = (e)=>{
+      if(e.key==="Enter" || e.key===" "){
+        e.preventDefault();
+        addPyramidCount(g.id, +1);
+        render();
+      }
+    };
+    pyEl.appendChild(layer);
+  });
+  c5.querySelector("#pyramidReset").onclick = ()=>{
+    if(!confirm("Zerar todas as porções de hoje?")) return;
+    groups.forEach(g=> setPyramidCount(g.id, 0));
+    render();
+  };
+  c5.querySelector("#pyramidUndo").onclick = ()=>{
+    // remove 1 from the group with highest count
+    let best=null, bestN=0;
+    groups.forEach(g=>{
+      const n = pyCounts[g.id]||0;
+      if(n>bestN){ bestN=n; best=g; }
+    });
+    if(best){ addPyramidCount(best.id, -1); render(); }
+  };
+  c5.querySelector("#pyramidConfigBtn").onclick = openNutritionSettingsModal;
+
+  /* --- Card 6: Gratidão --- */
+  const grat = getGratitude(day);
+  const c6 = document.createElement("div");
+  c6.className = "card";
+  c6.innerHTML = `
+    <div class="module-head"><div><h2>Gratidão</h2><span class="period">3 coisas boas de hoje</span></div></div>
+    <div class="grat-list">
+      ${[0,1,2].map(i=>`<div class="grat-item"><span class="num">${i+1}</span><input type="text" id="grat-${i}" placeholder="Sou grato por..." value="${escapeHtml(grat[i]||"")}"></div>`).join("")}
+    </div>
+    <div class="row-actions"><button class="btn primary" id="saveGrat">Salvar gratidão</button></div>
+  `;
+  area.appendChild(c6);
+  c6.querySelector("#saveGrat").onclick = ()=>{
+    const items = [0,1,2].map(i=>c6.querySelector(`#grat-${i}`).value.trim());
+    setGratitude(items);
+    toast("Gratidão salva","ok");
+    render();
+  };
+}
+
+/* ============ DASHBOARD / RESUMO ============ */
+function renderDashboard(area){
+  const day = todayKey();
+  // overall today completion across all day-checklists
+  const dayModules = MODULE_ORDER.filter(k=>MODULES[k] && MODULES[k].kind==="checklist" && MODULES[k].period==="day");
+  let totalItems=0, totalChecked=0;
+  dayModules.forEach(key=>{
+    const items = cache.items.filter(i=>i.module===key && i.active);
+    totalItems += items.length;
+    items.forEach(it=>{
+      const st = cache.status.find(s=>s.item_id===it.id && s.period_key===day);
+      if(st && st.checked) totalChecked++;
+    });
+  });
+  const overall = totalItems ? Math.round(totalChecked/totalItems*100) : 0;
+
+  const hero = document.createElement("div");
+  hero.className = "card dash-hero";
+  hero.innerHTML = `
+    <div class="module-head">
+      <div><h2>Seu dia</h2><span class="period">${formatDateLabel()}</span></div>
+    </div>
+    <div class="big-pct">${overall}%</div>
+    <div class="sub">${totalChecked} de ${totalItems} hábitos concluídos</div>
+    <div class="bar"><div style="width:${overall}%"></div></div>
+  `;
+  area.appendChild(hero);
+
+  const grid = document.createElement("div");
+  grid.className = "dash-grid";
+  // mood
+  const mood = cache.mood.find(m=>m.day_key===day);
+  const moodOpt = mood ? MOOD_OPTIONS.find(o=>o.v===mood.value) : null;
+  grid.appendChild(miniCard("Humor", moodOpt ? moodOpt.e : "—", moodOpt ? moodOpt.label : "sem registro"));
+  // water (dynamic goal)
+  const water = getWater(day);
+  const wGoal = getWaterGoalCups();
+  const wPct = wGoal ? Math.round(water/wGoal*100) : 0;
+  grid.appendChild(miniCard("Água", water+"<small>/"+wGoal+"</small>", wPct+"% · "+(water*cache.nutritionSettings.cupSizeMl)+"ml"));
+  // carbs (macros)
+  const macros = getMacros(day);
+  const carbsGoal = cache.nutritionSettings.macros.carbs.goal;
+  const carbsPct = carbsGoal ? Math.round(macros.carbs/carbsGoal*100) : 0;
+  grid.appendChild(miniCard("Carboidratos", macros.carbs+"<small>g</small>", carbsPct+"% de "+carbsGoal+"g"));
+  // tasks
+  const dayTasks = cache.tasks.filter(t=>t.day_key===day);
+  const tasksDone = dayTasks.filter(t=>t.done).length;
+  grid.appendChild(miniCard("Tarefas", tasksDone+"<small>/"+dayTasks.length+"</small>", "concluídas"));
+  // pyramid portions
+  const groups = cache.nutritionSettings.pyramidGroups;
+  const pyCounts = getPyramidCounts(day);
+  const totalGoal = groups.reduce((s,g)=>s+g.goal,0);
+  const totalCons = groups.reduce((s,g)=>s+(pyCounts[g.id]||0),0);
+  grid.appendChild(miniCard("Pirâmide", totalCons+"<small>/"+totalGoal+"</small>", "porções hoje"));
+  // gratitude
+  const grat = getGratitude(day).filter(x=>x.trim()).length;
+  grid.appendChild(miniCard("Gratidão", grat+"<small>/3</small>", grat===3?"completo":"pendentes"));
+  area.appendChild(grid);
+
+  // per-module quick bars
+  const perMod = document.createElement("div");
+  perMod.className = "card";
+  perMod.innerHTML = `<div class="module-head"><div><h2>Por módulo</h2><span class="period">hoje</span></div></div><div id="perModRows"></div>`;
+  area.appendChild(perMod);
+  const rows = perMod.querySelector("#perModRows");
+  dayModules.forEach(key=>{
+    const items = cache.items.filter(i=>i.module===key && i.active);
+    const checked = items.filter(it=>{
+      const st = cache.status.find(s=>s.item_id===it.id && s.period_key===day);
+      return st && st.checked;
+    }).length;
+    const pct = items.length ? Math.round(checked/items.length*100) : 0;
+    const row = document.createElement("div");
+    row.className = "hist-row";
+    row.style.cursor = "pointer";
+    row.innerHTML = `<span class="label">${escapeHtml(MODULES[key].label)}</span><div class="track"><div style="width:${pct}%; background:${MODULES[key].accent}"></div></div><span class="pct">${pct}%</span>`;
+    row.onclick = ()=>{ activeModule = key; render(); };
+    rows.appendChild(row);
+  });
+
+  // quick actions
+  const qa = document.createElement("div");
+  qa.className = "card";
+  qa.innerHTML = `<div class="module-head"><div><h2>Acesso rápido</h2></div></div>
+    <div class="row-actions" style="margin-top:0;">
+      <button class="btn primary" id="goBemestar">Bem-estar</button>
+      <button class="btn" id="goTarefas">Tarefas</button>
+      <button class="btn ghost" id="goHist">Histórico</button>
+    </div>`;
+  area.appendChild(qa);
+  qa.querySelector("#goBemestar").onclick = ()=>{ activeModule="bemestar"; render(); };
+  qa.querySelector("#goTarefas").onclick = ()=>{ activeModule="tarefas"; render(); };
+  qa.querySelector("#goHist").onclick = ()=>{ activeModule="historico"; render(); };
+}
+function miniCard(lbl, val, sub){
+  const d = document.createElement("div");
+  d.className = "dash-mini";
+  d.innerHTML = `<div class="lbl">${escapeHtml(lbl)}</div><div class="val">${val}</div><div class="small-note" style="margin-top:2px">${escapeHtml(sub)}</div>`;
+  return d;
+}
+
+function renderHistory(area){
+  const dailyModules = MODULE_ORDER.filter(k=>MODULES[k] && MODULES[k].kind==="checklist" && MODULES[k].period==="day");
+
+  // streaks
+  const streaksCard = document.createElement("div");
+  streaksCard.className = "card hist-block";
+  streaksCard.innerHTML = `<h3>Sequência atual</h3><div class="streaks" id="streaks"></div>`;
+  area.appendChild(streaksCard);
+  const streaksEl = streaksCard.querySelector("#streaks");
+  dailyModules.forEach(key=>{
+    const streak = computeStreak(key);
+    const chip = document.createElement("div");
+    chip.className = "streak-chip";
+    chip.style.borderColor = MODULES[key].accent+"55";
+    chip.innerHTML = `<b style="color:${MODULES[key].accent}">${streak}</b>${escapeHtml(MODULES[key].label)}`;
+    streaksEl.appendChild(chip);
+  });
+
+  // completion last 7 days
+  const compCard = document.createElement("div");
+  compCard.className = "card hist-block";
+  compCard.innerHTML = `<h3>Conclusão — últimos 7 dias</h3><div id="compRows"></div>`;
+  area.appendChild(compCard);
+  const rows = compCard.querySelector("#compRows");
+  dailyModules.forEach(key=>{
+    const pct = computeCompletionPct(key, 7);
+    const row = document.createElement("div");
+    row.className = "hist-row";
+    row.innerHTML = `<span class="label">${escapeHtml(MODULES[key].label)}</span><div class="track"><div style="width:${pct}%; background:${MODULES[key].accent}"></div></div><span class="pct">${pct}%</span>`;
+    rows.appendChild(row);
+  });
+
+  // mood chart last 14 days
+  const moodCard = document.createElement("div");
+  moodCard.className = "card hist-block";
+  moodCard.innerHTML = `<h3>Humor — últimos 14 dias</h3><div class="mood-chart" id="moodChart"></div><div class="mood-chart-labels" id="moodLabels"></div>`;
+  area.appendChild(moodCard);
+  const chart = moodCard.querySelector("#moodChart");
+  const labels = moodCard.querySelector("#moodLabels");
+  const days = lastNDays(14);
+  let hasMood = false;
+  days.forEach(d=>{
+    const entry = cache.mood.find(m=>m.day_key===d);
+    const v = entry ? entry.value : 0;
+    if(entry) hasMood = true;
+    const bar = document.createElement("div");
+    bar.className = "bar2";
+    bar.style.height = (v ? v*14 : 2)+"px";
+    bar.style.background = v ? MODULES.bemestar.accent : "var(--line)";
+    bar.title = d + (entry ? " — "+MOOD_OPTIONS.find(o=>o.v===v)?.label : "");
+    chart.appendChild(bar);
+    const lab = document.createElement("span");
+    lab.textContent = d.slice(8);
+    labels.appendChild(lab);
+  });
+  if(!hasMood){
+    moodCard.querySelector("h3").insertAdjacentHTML("afterend", '<p class="empty">Sem registros de humor ainda.</p>');
+  }
+
+  // water chart last 7 days (scaled to dynamic goal)
+  const wGoal = getWaterGoalCups();
+  const waterCard = document.createElement("div");
+  waterCard.className = "card hist-block";
+  waterCard.innerHTML = `<h3>Hidratação — últimos 7 dias <span class="small-note" style="font-weight:400;">meta: ${wGoal} copos</span></h3><div class="mood-chart" id="waterChart"></div><div class="mood-chart-labels" id="waterLabels"></div>`;
+  area.appendChild(waterCard);
+  const wchart = waterCard.querySelector("#waterChart");
+  const wlabels = waterCard.querySelector("#waterLabels");
+  lastNDays(7).forEach(d=>{
+    const w = cache.water.find(x=>x.day_key===d);
+    const c = w ? w.count : 0;
+    const pct = wGoal ? Math.min(100, c/wGoal*100) : 0;
+    const bar = document.createElement("div");
+    bar.className = "bar2";
+    bar.style.height = (c ? Math.max(4, pct/100*70) : 2)+"px";
+    bar.style.background = c ? (c>=wGoal ? "#5C7A3A" : "#5BA3D0") : "var(--line)";
+    bar.title = d+" — "+c+"/"+wGoal+" copos ("+Math.round(pct)+"%)";
+    wchart.appendChild(bar);
+    const lab = document.createElement("span");
+    lab.textContent = d.slice(8);
+    wlabels.appendChild(lab);
+  });
+
+  // carbs chart last 7 days
+  const carbsGoal = cache.nutritionSettings.macros.carbs.goal;
+  const carbsCard = document.createElement("div");
+  carbsCard.className = "card hist-block";
+  carbsCard.innerHTML = `<h3>Carboidratos — últimos 7 dias <span class="small-note" style="font-weight:400;">meta: ${carbsGoal}g</span></h3><div class="mood-chart" id="carbsChart"></div><div class="mood-chart-labels" id="carbsLabels"></div>`;
+  area.appendChild(carbsCard);
+  const cchart = carbsCard.querySelector("#carbsChart");
+  const clabels = carbsCard.querySelector("#carbsLabels");
+  lastNDays(7).forEach(d=>{
+    const m = cache.macrosLog.find(x=>x.day_key===d);
+    const v = m ? (m.carbs||0) : 0;
+    const pct = carbsGoal ? Math.min(100, v/carbsGoal*100) : 0;
+    const bar = document.createElement("div");
+    bar.className = "bar2";
+    bar.style.height = (v ? Math.max(4, pct/100*70) : 2)+"px";
+    bar.style.background = v ? (v>=carbsGoal ? "#6B7A3A" : "#D6A23C") : "var(--line)";
+    bar.title = d+" — "+v+"/"+carbsGoal+"g ("+Math.round(pct)+"%)";
+    cchart.appendChild(bar);
+    const lab = document.createElement("span");
+    lab.textContent = d.slice(8);
+    clabels.appendChild(lab);
+  });
+
+  // pyramid summary last 7 days
+  const groups = cache.nutritionSettings.pyramidGroups;
+  const pyCard = document.createElement("div");
+  pyCard.className = "card hist-block";
+  let pyHtml = `<h3>Pirâmide alimentar — últimos 7 dias</h3>`;
+  groups.forEach(g=>{
+    let total = 0;
+    lastNDays(7).forEach(d=>{
+      const p = cache.pyramidLog.find(x=>x.day_key===d);
+      if(p && p.counts[g.id]) total += p.counts[g.id];
+    });
+    const weekGoal = g.goal * 7;
+    const pct = weekGoal ? Math.min(100, Math.round(total/weekGoal*100)) : 0;
+    pyHtml += `<div class="hist-row"><span class="label">${g.icon||"•"} ${escapeHtml(g.label)}</span><div class="track"><div style="width:${pct}%; background:${g.color}"></div></div><span class="pct">${total}/${weekGoal}</span></div>`;
+  });
+  pyCard.innerHTML = pyHtml;
+  area.appendChild(pyCard);
+
+  // tasks this week
+  const tCard = document.createElement("div");
+  tCard.className = "card hist-block";
+  const weekDays = lastNDays(7);
+  const weekTasks = cache.tasks.filter(t=>weekDays.includes(t.day_key));
+  const weekDone = weekTasks.filter(t=>t.done).length;
+  tCard.innerHTML = `<h3>Tarefas — últimos 7 dias</h3><p class="small-note">${weekDone} de ${weekTasks.length} tarefas concluídas.</p>`;
+  area.appendChild(tCard);
+}
+
+function lastNDays(n){
+  const arr = [];
+  for(let i=n-1; i>=0; i--){
+    const d = new Date();
+    d.setDate(d.getDate()-i);
+    arr.push(d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"));
+  }
+  return arr;
+}
+function computeCompletionPct(moduleKey, n){
+  const items = cache.items.filter(i=>i.module===moduleKey && i.active);
+  if(items.length===0) return 0;
+  const days = lastNDays(n);
+  let totalPossible=0, totalDone=0;
+  days.forEach(day=>{
+    items.forEach(it=>{
+      const st = cache.status.find(s=>s.item_id===it.id && s.period_key===day);
+      if(st){ totalPossible++; if(st.checked) totalDone++; }
+    });
+  });
+  if(totalPossible===0) return 0;
+  return Math.round(totalDone/totalPossible*100);
+}
+function computeStreak(moduleKey){
+  const items = cache.items.filter(i=>i.module===moduleKey && i.active);
+  if(items.length===0) return 0;
+  let streak = 0;
+  for(let i=0;i<365;i++){
+    const d = new Date();
+    d.setDate(d.getDate()-i);
+    const key = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+    const allChecked = items.every(it=>{
+      const st = cache.status.find(s=>s.item_id===it.id && s.period_key===key);
+      return st && st.checked;
+    });
+    if(allChecked) streak++;
+    else break;
+  }
+  return streak;
+}
+
+function escapeHtml(s){
+  if(s===undefined||s===null) return "";
+  const div = document.createElement("div");
+  div.textContent = String(s);
+  return div.innerHTML;
+}
+function formatDateLabel(){
+  return new Date().toLocaleDateString('pt-BR',{weekday:'long', day:'2-digit', month:'short'});
+}
+
+/* ================== TOAST ================== */
+function toast(msg, kind){
+  kind = kind || "ok";
+  const wrap = document.getElementById("toastWrap");
+  const t = document.createElement("div");
+  t.className = "toast "+kind;
+  t.textContent = msg;
+  wrap.appendChild(t);
+  setTimeout(()=>{ t.remove(); }, 2600);
+}
+
+/* ================== MODAL: NUTRITION SETTINGS ================== */
+const NUTRI_COLORS = ["#C1502E","#D6A23C","#6B7A3A","#9C6B2E","#B5566B","#4A3B6B","#2E6B62","#5A7A8B","#3C6B5A","#8B5A9F"];
+const NUTRI_ICONS = ["🍞","🥩","🍎","🥬","🍭","🥛","🍚","🥚","🐟","🧀","🍩","🥦","🍌","💧","🌰"];
+function openNutritionSettingsModal(){
+  const root = document.getElementById("modalRoot");
+  const s = JSON.parse(JSON.stringify(cache.nutritionSettings)); // deep clone working copy
+  const needMl = Math.max(800, Math.round(s.weight * 35));
+  const autoCups = Math.max(1, Math.round(needMl / s.cupSizeMl));
+  root.innerHTML = `
+    <div class="modal-overlay">
+      <div class="modal nutri-modal" role="dialog" aria-modal="true">
+        <h3>Configurar nutrição</h3>
+
+        <div class="nutri-section">
+          <h4>💧 Hidratação</h4>
+          <div class="nutri-field">
+            <label>Seu peso
+              <span class="hint">usado para calcular sua necessidade de água</span>
+            </label>
+            <input type="number" id="nutWeight" value="${s.weight}" min="20" max="300" step="1">
+          </div>
+          <div class="nutri-field">
+            <label>Tamanho do copo
+              <span class="hint">ml por copo</span>
+            </label>
+            <input type="number" id="nutCupSize" value="${s.cupSizeMl}" min="50" max="1000" step="10">
+          </div>
+          <label class="nutri-toggle">
+            <input type="checkbox" id="nutAutoCalc" ${s.waterAutoCalc?'checked':''}>
+            Calcular meta automaticamente pelo peso
+          </label>
+          <div class="nutri-field" id="manualGoalRow" style="${s.waterAutoCalc?'display:none;':''}">
+            <label>Meta manual (copos)</label>
+            <input type="number" id="nutWaterGoal" value="${s.waterGoalOverride}" min="1" max="30" step="1">
+          </div>
+          <div class="nutri-calc-note" id="waterCalcNote">
+            Cálculo: <b>${s.weight} kg</b> × 35 ml = <b>${needMl} ml</b> → <b>${autoCups} copos</b> de ${s.cupSizeMl} ml
+          </div>
+        </div>
+
+        <div class="nutri-section">
+          <h4>🥗 Macros (metas em gramas)</h4>
+          <div class="nutri-field">
+            <label>Carboidratos</label>
+            <input type="number" id="nutCarbsGoal" value="${s.macros.carbs.goal}" min="0" max="2000" step="5">
+          </div>
+          <div class="nutri-field">
+            <label>Proteínas</label>
+            <input type="number" id="nutProteinGoal" value="${s.macros.protein.goal}" min="0" max="1000" step="5">
+          </div>
+          <div class="nutri-field">
+            <label>Gorduras</label>
+            <input type="number" id="nutFatGoal" value="${s.macros.fat.goal}" min="0" max="1000" step="5">
+          </div>
+        </div>
+
+        <div class="nutri-section">
+          <h4>🔺 Pirâmide alimentar</h4>
+          <p class="small-note" style="margin:0 0 8px;">Ordem: topo (modere) → base (coma mais). Arraste os itens para reordenar.</p>
+          <div class="pyramid-edit-list" id="pyrList"></div>
+          <div class="nutri-add-group">
+            <input type="text" id="newGroupName" placeholder="Novo grupo..." maxlength="28">
+            <button class="btn" id="addGroupBtn" style="padding:6px 10px;font-size:12px;">+ Grupo</button>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn danger" id="resetNutri">Restaurar padrão</button>
+          <button class="btn ghost" id="cancelNutri">Cancelar</button>
+          <button class="btn primary" id="saveNutri">Salvar</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // helper to re-render the pyramid edit list from `s.pyramidGroups`
+  function renderPyrList(){
+    const list = root.querySelector("#pyrList");
+    list.innerHTML = "";
+    s.pyramidGroups.forEach((g, idx)=>{
+      const item = document.createElement("div");
+      item.className = "pyramid-edit-item";
+      item.draggable = true;
+      item.dataset.idx = idx;
+      item.innerHTML = `
+        <span class="pe-handle" title="arraste para reordenar">⠿</span>
+        <input type="text" class="pe-icon-input" value="${escapeHtml(g.icon||"")}" maxlength="2" style="width:30px;text-align:center;font-size:14px;padding:4px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);" title="ícone (emoji)">
+        <input type="color" class="pe-color" value="${g.color}" title="cor">
+        <input type="text" class="pe-label" value="${escapeHtml(g.label)}" maxlength="28" placeholder="Nome do grupo">
+        <input type="number" class="pe-goal" value="${g.goal}" min="0" max="30" step="1" title="meta de porções">
+        <button class="pe-del" title="excluir">✕</button>
+      `;
+      item.querySelector(".pe-icon-input").oninput = (e)=>{ g.icon = e.target.value; };
+      item.querySelector(".pe-color").oninput = (e)=>{ g.color = e.target.value; };
+      item.querySelector(".pe-label").oninput = (e)=>{ g.label = e.target.value; };
+      item.querySelector(".pe-goal").oninput = (e)=>{ g.goal = Math.max(0, parseInt(e.target.value,10)||0); };
+      item.querySelector(".pe-del").onclick = ()=>{
+        if(s.pyramidGroups.length<=1){ toast("Mantenha pelo menos 1 grupo","warn"); return; }
+        s.pyramidGroups.splice(idx,1);
+        renderPyrList();
+      };
+      // drag reorder
+      item.addEventListener("dragstart", (e)=>{
+        item.classList.add("dragging");
+        e.dataTransfer.setData("text/plain", idx);
+      });
+      item.addEventListener("dragend", ()=>{ item.classList.remove("dragging"); });
+      item.addEventListener("dragover", (e)=>{ e.preventDefault(); });
+      item.addEventListener("drop", (e)=>{
+        e.preventDefault();
+        const from = parseInt(e.dataTransfer.getData("text/plain"),10);
+        const to = idx;
+        if(from===to) return;
+        const moved = s.pyramidGroups.splice(from,1)[0];
+        s.pyramidGroups.splice(to,0,moved);
+        renderPyrList();
+      });
+      list.appendChild(item);
+    });
+  }
+  renderPyrList();
+
+  // add group
+  root.querySelector("#addGroupBtn").onclick = ()=>{
+    const name = root.querySelector("#newGroupName").value.trim();
+    if(!name){ toast("Dê um nome ao grupo","warn"); return; }
+    s.pyramidGroups.push({
+      id: "g_"+Date.now(),
+      label: name,
+      goal: 3,
+      color: NUTRI_COLORS[s.pyramidGroups.length % NUTRI_COLORS.length],
+      icon: NUTRI_ICONS[s.pyramidGroups.length % NUTRI_ICONS.length],
+    });
+    root.querySelector("#newGroupName").value = "";
+    renderPyrList();
+  };
+  root.querySelector("#newGroupName").onkeydown = (e)=>{ if(e.key==="Enter") root.querySelector("#addGroupBtn").click(); };
+
+  // auto-calc toggle
+  const autoChk = root.querySelector("#nutAutoCalc");
+  const manualRow = root.querySelector("#manualGoalRow");
+  const noteEl = root.querySelector("#waterCalcNote");
+  function updateWaterNote(){
+    const w = parseFloat(root.querySelector("#nutWeight").value)||70;
+    const cs = parseInt(root.querySelector("#nutCupSize").value,10)||250;
+    const ml = Math.max(800, Math.round(w*35));
+    const cups = Math.max(1, Math.round(ml/cs));
+    noteEl.innerHTML = `Cálculo: <b>${w} kg</b> × 35 ml = <b>${ml} ml</b> → <b>${cups} copos</b> de ${cs} ml`;
+  }
+  autoChk.onchange = ()=>{
+    s.waterAutoCalc = autoChk.checked;
+    manualRow.style.display = autoChk.checked ? "none" : "";
+    updateWaterNote();
+  };
+  root.querySelector("#nutWeight").oninput = updateWaterNote;
+  root.querySelector("#nutCupSize").oninput = updateWaterNote;
+
+  const close = ()=>{ root.innerHTML = ""; };
+  root.querySelector("#cancelNutri").onclick = close;
+  root.querySelector(".modal-overlay").onclick = (e)=>{ if(e.target.classList.contains("modal-overlay")) close(); };
+
+  root.querySelector("#resetNutri").onclick = ()=>{
+    if(!confirm("Restaurar todas as configurações de nutrição para o padrão? Seus registros de hoje serão mantidos.")) return;
+    const def = defaultNutritionSettings();
+    s.weight = def.weight;
+    s.cupSizeMl = def.cupSizeMl;
+    s.waterAutoCalc = def.waterAutoCalc;
+    s.waterGoalOverride = def.waterGoalOverride;
+    s.macros = def.macros;
+    s.pyramidGroups = def.pyramidGroups;
+    // update form fields
+    root.querySelector("#nutWeight").value = s.weight;
+    root.querySelector("#nutCupSize").value = s.cupSizeMl;
+    autoChk.checked = s.waterAutoCalc;
+    manualRow.style.display = s.waterAutoCalc ? "none" : "";
+    root.querySelector("#nutWaterGoal").value = s.waterGoalOverride;
+    root.querySelector("#nutCarbsGoal").value = s.macros.carbs.goal;
+    root.querySelector("#nutProteinGoal").value = s.macros.protein.goal;
+    root.querySelector("#nutFatGoal").value = s.macros.fat.goal;
+    updateWaterNote();
+    renderPyrList();
+    toast("Padrão restaurado","ok");
+  };
+
+  root.querySelector("#saveNutri").onclick = ()=>{
+    // gather values
+    s.weight = Math.max(20, Math.min(300, parseFloat(root.querySelector("#nutWeight").value)||70));
+    s.cupSizeMl = Math.max(50, Math.min(1000, parseInt(root.querySelector("#nutCupSize").value,10)||250));
+    s.waterAutoCalc = autoChk.checked;
+    s.waterGoalOverride = Math.max(1, Math.min(30, parseInt(root.querySelector("#nutWaterGoal").value,10)||8));
+    s.macros.carbs.goal = Math.max(0, parseInt(root.querySelector("#nutCarbsGoal").value,10)||0);
+    s.macros.protein.goal = Math.max(0, parseInt(root.querySelector("#nutProteinGoal").value,10)||0);
+    s.macros.fat.goal = Math.max(0, parseInt(root.querySelector("#nutFatGoal").value,10)||0);
+    // validate groups (filter empty labels)
+    s.pyramidGroups = s.pyramidGroups.filter(g=>g.label && g.label.trim());
+    saveNutritionSettings(s);
+    close();
+    render();
+    toast("Nutrição configurada","ok");
+  };
+}
+
+/* ================== MODAL: CREATE MODULE ================== */
+function openCreateModuleModal(){
+  const root = document.getElementById("modalRoot");
+  const colors = ["#C1502E","#3C6B5A","#6B7A3A","#4A3B6B","#9C6B2E","#B5566B","#2E6B62","#5C4A3A","#8B5A9F","#5A7A8B"];
+  root.innerHTML = `
+    <div class="modal-overlay">
+      <div class="modal" role="dialog" aria-modal="true">
+        <h3>Novo módulo</h3>
+        <label>Nome do módulo</label>
+        <input type="text" id="newModName" placeholder="Ex: Academia, Estudos, Leitura..." maxlength="24">
+        <label>Cor</label>
+        <div class="color-row" id="colorRow">
+          ${colors.map((c,i)=>`<div class="color-swatch ${i===0?'selected':''}" data-color="${c}" style="background:${c}"></div>`).join("")}
+        </div>
+        <div class="modal-actions">
+          <button class="btn ghost" id="cancelMod">Cancelar</button>
+          <button class="btn primary" id="createMod">Criar</button>
+        </div>
+      </div>
+    </div>
+  `;
+  let chosen = colors[0];
+  root.querySelectorAll(".color-swatch").forEach(sw=>{
+    sw.onclick = ()=>{
+      root.querySelectorAll(".color-swatch").forEach(x=>x.classList.remove("selected"));
+      sw.classList.add("selected");
+      chosen = sw.dataset.color;
+    };
+  });
+  const nameInput = root.querySelector("#newModName");
+  nameInput.focus();
+  const close = ()=>{ root.innerHTML = ""; };
+  root.querySelector("#cancelMod").onclick = close;
+  const submit = ()=>{
+    const v = nameInput.value.trim();
+    if(!v){ toast("Dê um nome ao módulo","warn"); return; }
+    createCustomModule(v, chosen);
+    close();
+  };
+  root.querySelector("#createMod").onclick = submit;
+  nameInput.onkeydown = (e)=>{ if(e.key==="Enter") submit(); if(e.key==="Escape") close(); };
+  root.querySelector(".modal-overlay").onclick = (e)=>{ if(e.target.classList.contains("modal-overlay")) close(); };
+}
+
+/* ================== FOOTER ================== */
+function updateFooter(){
+  const day = todayKey();
+  const dayModules = MODULE_ORDER.filter(k=>MODULES[k] && MODULES[k].kind==="checklist" && MODULES[k].period==="day");
+  let total=0, done=0;
+  dayModules.forEach(key=>{
+    const items = cache.items.filter(i=>i.module===key && i.active);
+    total += items.length;
+    items.forEach(it=>{
+      const st = cache.status.find(s=>s.item_id===it.id && s.period_key===day);
+      if(st && st.checked) done++;
+    });
+  });
+  const pct = total ? Math.round(done/total*100) : 0;
+  document.getElementById("footerDate").textContent = new Date().toLocaleDateString('pt-BR',{weekday:'short', day:'2-digit', month:'2-digit'});
+  document.getElementById("footerProgress").textContent = pct+"% hoje";
+  // best streak across daily modules
+  let best = 0;
+  dayModules.forEach(k=>{ const s = computeStreak(k); if(s>best) best = s; });
+  document.getElementById("footerStreak").textContent = "🔥 "+best;
+}
+
+/* ================== THEME ================== */
+function applyTheme(theme){
+  document.documentElement.setAttribute("data-theme", theme);
+  document.getElementById("iconSun").style.display = theme==="dark" ? "none" : "block";
+  document.getElementById("iconMoon").style.display = theme==="dark" ? "block" : "none";
+  localStorage.setItem("ritual_theme", theme);
+}
+function toggleTheme(){
+  const cur = document.documentElement.getAttribute("data-theme") || "light";
+  applyTheme(cur==="dark" ? "light" : "dark");
+}
+
+/* ================== PWA: SERVICE WORKER + INSTALL PROMPT ================== */
+// Registra o service worker para funcionar offline no celular
+if("serviceWorker" in navigator){
+  window.addEventListener("load", ()=>{
+    navigator.serviceWorker.register("/sw.js").catch(()=>{ /* falha silenciosa — app continua funcionando online */ });
+  });
+}
+
+// Detecta se o app está instalado (rodando como standalone)
+const IS_INSTALLED = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+
+// Botão "Instalar app" (beforeinstallprompt) — só aparece em Android/Chrome quando instalável
+let deferredPrompt = null;
+window.addEventListener("beforeinstallprompt", (e)=>{
+  e.preventDefault();
+  deferredPrompt = e;
+  showInstallButton();
+});
+window.addEventListener("appinstalled", ()=>{
+  hideInstallButton();
+  toast("App instalado! 🎉","ok");
+});
+
+function showInstallButton(){
+  const wrap = document.querySelector(".wrap");
+  if(!wrap || document.getElementById("installBanner")) return;
+  const banner = document.createElement("div");
+  banner.id = "installBanner";
+  banner.style.cssText = "background:var(--accent);color:#FFFBF2;border-radius:12px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;font-size:13px;";
+  banner.innerHTML = `
+    <span style="font-size:22px;">📲</span>
+    <div style="flex:1;min-width:0;">
+      <b style="display:block;font-size:13px;">Instalar app</b>
+      <span style="opacity:.85;font-size:11px;">use offline no celular, como app nativo</span>
+    </div>
+    <button id="installYes" style="background:#FFFBF2;color:var(--accent);border:none;border-radius:8px;padding:8px 12px;font-weight:700;font-size:12px;cursor:pointer;">Instalar</button>
+    <button id="installNo" style="background:transparent;color:#FFFBF2;border:1px solid rgba(255,251,242,0.4);border-radius:8px;padding:8px 10px;font-size:12px;cursor:pointer;">×</button>
+  `;
+  wrap.insertBefore(banner, wrap.firstChild.nextSibling); // depois do header
+  banner.querySelector("#installYes").onclick = async ()=>{
+    if(!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    hideInstallButton();
+  };
+  banner.querySelector("#installNo").onclick = ()=>{
+    hideInstallButton();
+    localStorage.setItem("ritual_install_dismissed", "1");
+  };
+}
+function hideInstallButton(){
+  const b = document.getElementById("installBanner");
+  if(b) b.remove();
+}
+
+/* ================== INIT ================== */
+(async function init(){
+  // theme
+  const savedTheme = localStorage.getItem("ritual_theme") || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? "dark" : "light");
+  applyTheme(savedTheme);
+  document.getElementById("themeToggle").onclick = toggleTheme;
+
+  // custom modules
+  syncCustomModules();
+
+  // deep link
+  const params = new URLSearchParams(window.location.search);
+  const mod = params.get("modulo");
+  if(mod && MODULES[mod]) activeModule = mod;
+
+  render(); // render imediato com cache local
+  await fetchAll();
+  render(); // re-render com dados do Supabase (se disponíveis)
+  updateFooter();
+
+  // mostra dica de instalação uma vez (se não foi dispensada e não está instalado)
+  if(!IS_INSTALLED && !localStorage.getItem("ritual_install_dismissed") && deferredPrompt){
+    showInstallButton();
+  }
+})();
+</script>
+</body>
+</html>

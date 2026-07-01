@@ -1,0 +1,879 @@
+     1→     1→<!DOCTYPE html>
+     2→     2→<html lang="pt-BR">
+     3→     3→<head>
+     4→     4→<meta charset="UTF-8">
+     5→     5→<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+     6→     6→<title>Ritual diário</title>
+     7→     7→<link rel="preconnect" href="https://fonts.googleapis.com">
+     8→     8→<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+     9→     9→<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Karla:ital,wght@0,400;0,500;0,700;1,400&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    10→    10→<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    11→    11→<style>
+    12→    12→  :root{
+    13→    13→    --bg: #F1E4C9;
+    14→    14→    --card: #FFFBF2;
+    15→    15→    --ink: #2B2117;
+    16→    16→    --ink-soft: #6B5D4D;
+    17→    17→    --line: #DCC9A0;
+    18→    18→    --accent: #C1502E;
+    19→    19→    --accent-soft: #C1502E22;
+    20→    20→    --radius: 16px;
+    21→    21→  }
+    22→    22→  *{ box-sizing: border-box; }
+    23→    23→  html,body{ margin:0; padding:0; }
+    24→    24→  body{
+    25→    25→    background: var(--bg);
+    26→    26→    color: var(--ink);
+    27→    27→    font-family: 'Karla', sans-serif;
+    28→    28→    min-height: 100vh;
+    29→    29→    -webkit-tap-highlight-color: transparent;
+    30→    30→  }
+    31→    31→  .wrap{
+    32→    32→    max-width: 480px;
+    33→    33→    margin: 0 auto;
+    34→    34→    padding: 18px 16px 60px;
+    35→    35→  }
+    36→    36→  header.top{
+    37→    37→    display:flex;
+    38→    38→    align-items:baseline;
+    39→    39→    justify-content: space-between;
+    40→    40→    margin-bottom: 14px;
+    41→    41→  }
+    42→    42→  header.top h1{
+    43→    43→    font-family:'Bricolage Grotesque', sans-serif;
+    44→    44→    font-weight:700;
+    45→    45→    font-size: 22px;
+    46→    46→    margin:0;
+    47→    47→    letter-spacing: -0.02em;
+    48→    48→  }
+    49→    49→  .sync{
+    50→    50→    font-family:'JetBrains Mono', monospace;
+    51→    51→    font-size: 10px;
+    52→    52→    text-transform: uppercase;
+    53→    53→    letter-spacing: 0.06em;
+    54→    54→    padding: 4px 8px;
+    55→    55→    border-radius: 20px;
+    56→    56→    background: var(--card);
+    57→    57→    border: 1px solid var(--line);
+    58→    58→    color: var(--ink-soft);
+    59→    59→    white-space: nowrap;
+    60→    60→  }
+    61→    61→  .sync.ok::before{ content:"● "; color:#5C7A3A; }
+    62→    62→  .sync.off::before{ content:"● "; color:#B5566B; }
+    63→    63→
+    64→    64→  nav.tabs{
+    65→    65→    display:flex;
+    66→    66→    gap:6px;
+    67→    67→    overflow-x:auto;
+    68→    68→    padding-bottom: 6px;
+    69→    69→    margin-bottom: 16px;
+    70→    70→    scrollbar-width:none;
+    71→    71→  }
+    72→    72→  nav.tabs::-webkit-scrollbar{ display:none; }
+    73→    73→  nav.tabs button{
+    74→    74→    flex: 0 0 auto;
+    75→    75→    font-family:'Karla', sans-serif;
+    76→    76→    font-weight:700;
+    77→    77→    font-size: 13px;
+    78→    78→    padding: 8px 13px;
+    79→    79→    border-radius: 999px;
+    80→    80→    border: 1px solid var(--line);
+    81→    81→    background: var(--card);
+    82→    82→    color: var(--ink-soft);
+    83→    83→    cursor:pointer;
+    84→    84→  }
+    85→    85→  nav.tabs button.active{
+    86→    86→    background: var(--accent);
+    87→    87→    border-color: var(--accent);
+    88→    88→    color: #FFFBF2;
+    89→    89→  }
+    90→    90→
+    91→    91→  .card{
+    92→    92→    background: var(--card);
+    93→    93→    border-radius: var(--radius);
+    94→    94→    border: 1px solid var(--line);
+    95→    95→    padding: 16px;
+    96→    96→    box-shadow: 0 1px 0 rgba(43,33,23,0.04);
+    97→    97→  }
+    98→    98→  .card + .card{ margin-top: 12px; }
+    99→    99→
+   100→   100→  .module-head{
+   101→   101→    display:flex;
+   102→   102→    align-items:flex-end;
+   103→   103→    justify-content: space-between;
+   104→   104→    margin-bottom: 10px;
+   105→   105→  }
+   106→   106→  .module-head h2{
+   107→   107→    font-family:'Bricolage Grotesque', sans-serif;
+   108→   108→    font-size: 19px;
+   109→   109→    margin:0;
+   110→   110→  }
+   111→   111→  .module-head .period{
+   112→   112→    font-family:'JetBrains Mono', monospace;
+   113→   113→    font-size: 11px;
+   114→   114→    color: var(--ink-soft);
+   115→   115→    display:block;
+   116→   116→    margin-top:2px;
+   117→   117→  }
+   118→   118→  .frac{
+   119→   119→    font-family:'JetBrains Mono', monospace;
+   120→   120→    font-weight:600;
+   121→   121→    font-size: 15px;
+   122→   122→    color: var(--accent);
+   123→   123→  }
+   124→   124→  .bar{
+   125→   125→    height:6px;
+   126→   126→    border-radius: 4px;
+   127→   127→    background: var(--line);
+   128→   128→    overflow:hidden;
+   129→   129→    margin-bottom: 14px;
+   130→   130→  }
+   131→   131→  .bar > div{
+   132→   132→    height:100%;
+   133→   133→    background: var(--accent);
+   134→   134→    transition: width .25s ease;
+   135→   135→  }
+   136→   136→
+   137→   137→  ul.items{ list-style:none; margin:0; padding:0; }
+   138→   138→  ul.items li{
+   139→   139→    display:flex;
+   140→   140→    align-items:center;
+   141→   141→    gap:10px;
+   142→   142→    padding: 9px 0;
+   143→   143→    border-bottom: 1px solid var(--line);
+   144→   144→  }
+   145→   145→  ul.items li:last-child{ border-bottom:none; }
+   146→   146→
+   147→   147→  .stamp{
+   148→   148→    flex: 0 0 auto;
+   149→   149→    width: 28px;
+   150→   150→    height: 28px;
+   151→   151→    border-radius: 7px;
+   152→   152→    border: 2px solid var(--accent);
+   153→   153→    background: transparent;
+   154→   154→    cursor:pointer;
+   155→   155→    position:relative;
+   156→   156→    display:flex;
+   157→   157→    align-items:center;
+   158→   158→    justify-content:center;
+   159→   159→    font-family:'JetBrains Mono', monospace;
+   160→   160→    font-weight:700;
+   161→   161→    font-size:13px;
+   162→   162→    color: transparent;
+   163→   163→    transition: transform .18s ease;
+   164→   164→  }
+   165→   165→  .stamp.checked{
+   166→   166→    background: var(--accent);
+   167→   167→    color:#FFFBF2;
+   168→   168→  }
+   169→   169→  .stamp.bump{ animation: bump .28s ease; }
+   170→   170→  @keyframes bump{
+   171→   171→    0%{ transform: scale(1) rotate(0deg); }
+   172→   172→    45%{ transform: scale(1.25) rotate(var(--tilt,-6deg)); }
+   173→   173→    100%{ transform: scale(1) rotate(0deg); }
+   174→   174→  }
+   175→   175→  @media (prefers-reduced-motion: reduce){
+   176→   176→    .stamp.bump{ animation:none; }
+   177→   177→  }
+   178→   178→
+   179→   179→  .item-label{ flex:1; font-size: 15px; line-height:1.3; }
+   180→   180→  .item-label.done{ color: var(--ink-soft); text-decoration: line-through; text-decoration-color: var(--line); }
+   181→   181→
+   182→   182→  .edit-controls{ display:flex; gap:4px; flex:0 0 auto; }
+   183→   183→  .edit-controls button{
+   184→   184→    border:none;
+   185→   185→    background:none;
+   186→   186→    color: var(--ink-soft);
+   187→   187→    font-size:15px;
+   188→   188→    cursor:pointer;
+   189→   189→    padding:4px;
+   190→   190→    line-height:1;
+   191→   191→  }
+   192→   192→  .edit-controls button:hover{ color: var(--accent); }
+   193→   193→
+   194→   194→  .row-actions{
+   195→   195→    display:flex;
+   196→   196→    gap:8px;
+   197→   197→    margin-top: 14px;
+   198→   198→  }
+   199→   199→  .btn{
+   200→   200→    font-family:'Karla', sans-serif;
+   201→   201→    font-weight:700;
+   202→   202→    font-size: 13px;
+   203→   203→    padding: 9px 14px;
+   204→   204→    border-radius: 10px;
+   205→   205→    border: 1px solid var(--line);
+   206→   206→    background: transparent;
+   207→   207→    color: var(--ink);
+   208→   208→    cursor:pointer;
+   209→   209→  }
+   210→   210→  .btn.primary{
+   211→   211→    background: var(--accent);
+   212→   212→    border-color: var(--accent);
+   213→   213→    color:#FFFBF2;
+   214→   214→  }
+   215→   215→  .btn.ghost{ color: var(--ink-soft); }
+   216→   216→
+   217→   217→  .add-row{
+   218→   218→    display:flex;
+   219→   219→    gap:8px;
+   220→   220→    margin-top: 12px;
+   221→   221→  }
+   222→   222→  .add-row input{
+   223→   223→    flex:1;
+   224→   224→    font-family:'Karla', sans-serif;
+   225→   225→    font-size: 14px;
+   226→   226→    padding: 10px 12px;
+   227→   227→    border-radius: 10px;
+   228→   228→    border: 1px solid var(--line);
+   229→   229→    background: #fff;
+   230→   230→    color: var(--ink);
+   231→   231→  }
+   232→   232→  .add-row input:focus{ outline: 2px solid var(--accent); outline-offset:1px; }
+   233→   233→
+   234→   234→  .pill{
+   235→   235→    font-family:'JetBrains Mono', monospace;
+   236→   236→    font-size: 10px;
+   237→   237→    padding: 2px 7px;
+   238→   238→    border-radius: 999px;
+   239→   239→    color: #fff;
+   240→   240→  }
+   241→   241→
+   242→   242→  select.priority{
+   243→   243→    font-family:'JetBrains Mono', monospace;
+   244→   244→    font-size: 11px;
+   245→   245→    border-radius: 8px;
+   246→   246→    border: 1px solid var(--line);
+   247→   247→    background:#fff;
+   248→   248→    padding: 4px 6px;
+   249→   249→    color: var(--ink-soft);
+   250→   250→  }
+   251→   251→
+   252→   252→  .mood-grid{ display:flex; gap:8px; justify-content:space-between; margin-bottom: 14px; }
+   253→   253→  .mood-grid button{
+   254→   254→    flex:1;
+   255→   255→    font-size: 26px;
+   256→   256→    background: #fff;
+   257→   257→    border: 2px solid var(--line);
+   258→   258→    border-radius: 12px;
+   259→   259→    padding: 10px 0;
+   260→   260→    cursor:pointer;
+   261→   261→  }
+   262→   262→  .mood-grid button.selected{
+   263→   263→    border-color: var(--accent);
+   264→   264→    background: var(--accent-soft);
+   265→   265→  }
+   266→   266→  textarea.note{
+   267→   267→    width:100%;
+   268→   268→    font-family:'Karla', sans-serif;
+   269→   269→    font-size: 14px;
+   270→   270→    border-radius: 10px;
+   271→   271→    border: 1px solid var(--line);
+   272→   272→    padding: 10px 12px;
+   273→   273→    resize: vertical;
+   274→   274→    min-height: 60px;
+   275→   275→    background:#fff;
+   276→   276→    color: var(--ink);
+   277→   277→  }
+   278→   278→
+   279→   279→  .hist-block{ margin-bottom: 18px; }
+   280→   280→  .hist-block h3{
+   281→   281→    font-family:'Bricolage Grotesque', sans-serif;
+   282→   282→    font-size: 15px;
+   283→   283→    margin: 0 0 8px;
+   284→   284→  }
+   285→   285→  .hist-row{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+   286→   286→  .hist-row .label{ width: 120px; font-size: 12px; color: var(--ink-soft); flex:0 0 auto; }
+   287→   287→  .hist-row .track{ flex:1; height:8px; border-radius:5px; background: var(--line); overflow:hidden; }
+   288→   288→  .hist-row .track > div{ height:100%; }
+   289→   289→  .hist-row .pct{ width: 38px; text-align:right; font-family:'JetBrains Mono', monospace; font-size:11px; color: var(--ink-soft); }
+   290→   290→
+   291→   291→  .streaks{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom: 18px; }
+   292→   292→  .streak-chip{
+   293→   293→    font-family:'JetBrains Mono', monospace;
+   294→   294→    font-size: 11px;
+   295→   295→    padding: 8px 10px;
+   296→   296→    border-radius: 10px;
+   297→   297→    background: #fff;
+   298→   298→    border: 1px solid var(--line);
+   299→   299→    color: var(--ink);
+   300→   300→  }
+   301→   301→  .streak-chip b{ display:block; font-size:16px; }
+   302→   302→
+   303→   303→  .mood-chart{ display:flex; align-items:flex-end; gap:4px; height: 70px; margin-bottom: 6px; }
+   304→   304→  .mood-chart .bar2{ flex:1; border-radius: 4px 4px 0 0; min-height:4px; }
+   305→   305→  .mood-chart-labels{ display:flex; gap:4px; font-family:'JetBrains Mono', monospace; font-size:9px; color:var(--ink-soft); }
+   306→   306→  .mood-chart-labels span{ flex:1; text-align:center; }
+   307→   307→
+   308→   308→  .empty{
+   309→   309→    color: var(--ink-soft);
+   310→   310→    font-size: 14px;
+   311→   311→    text-align:center;
+   312→   312→    padding: 18px 0;
+   313→   313→  }
+   314→   314→  .small-note{
+   315→   315→    font-size: 12px;
+   316→   316→    color: var(--ink-soft);
+   317→   317→    margin-top: 10px;
+   318→   318→  }
+   319→   319→</style>
+   320→   320→</head>
+   321→   321→<body>
+   322→   322→<div class="wrap">
+   323→   323→  <header class="top">
+   324→   324→    <h1>Ritual diário</h1>
+   325→   325→    <span class="sync off" id="syncBadge">offline</span>
+   326→   326→  </header>
+   327→   327→
+   328→   328→  <nav class="tabs" id="tabs"></nav>
+   329→   329→  <div id="moduleArea"></div>
+   330→   330→</div>
+   331→   331→
+   332→   332→<script>
+   333→   333→/* ================== CONFIG ================== */
+   334→   334→const SUPABASE_URL = "https://mvbpdfzaypnlctspwsiw.supabase.co";
+   335→   335→const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im12YnBkZnpheXBubGN0c3B3c2l3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1ODUzNDYsImV4cCI6MjA5ODE2MTM0Nn0.STVSWY1w34z94SX6JkUD2kzNiXtbI8LHDBxnKvLmuco";
+   336→   336→const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+   337→   337→
+   338→   338→const MODULES = {
+   339→   339→  manha:       { label: "Manhã",      kind: "checklist", period: "day",  accent: "#C1502E", defaults: ["Tomei banho","Lavei o rosto","Escovei os dentes","Usei fio dental","Cortei/limpei as unhas","Passei desodorante","Pentes/arrumei o cabelo"] },
+   340→   340→  mental:      { label: "Mental",     kind: "checklist", period: "day",  accent: "#3C4A6B", defaults: ["Dormi bem","Tomei água suficiente","Tomei sol / fui lá fora","Fiz uma pausa sem celular","Falei com alguém hoje","Respirei/medidei um pouco"] },
+   341→   341→  organizacao: { label: "Organização",kind: "checklist", period: "day",  accent: "#6B7A3A", defaults: ["Guarda-roupa organizado","Roupas lavadas","Cama feita","Mesa organizada","Louça lavada","Lixo retirado"] },
+   342→   342→  noturno:     { label: "Noturno",    kind: "checklist", period: "day",  accent: "#4A3B6B", defaults: ["Escovei os dentes","Lavei o rosto","Separei a roupa de amanhã","Carreguei o celular","Configurei o alarme"] },
+   343→   343→  semanal:     { label: "Semanal",    kind: "checklist", period: "week", accent: "#9C6B2E", defaults: ["Troquei o lençol","Limpei o quarto/casa","Organizei o guarda-roupa a fundo","Cortei as unhas a fundo","Cortei/aparei o cabelo"] },
+   344→   344→  saida:       { label: "Saída",      kind: "checklist", period: "day",  accent: "#B5566B", defaults: ["Passei perfume","Passei desodorante","Peguei carteira/documentos","Peguei celular e carregador","Peguei as chaves","Tranquei a porta","Levei garrafa de água","Conferi o tempo (chuva/frio)"] },
+   345→   345→  tarefas:     { label: "Tarefas",    kind: "tasks",      accent: "#2E6B62" },
+   346→   346→  humor:       { label: "Humor",      kind: "mood",        accent: "#D6A23C" },
+   347→   347→  historico:   { label: "Histórico",  kind: "history",     accent: "#5C4A3A" },
+   348→   348→};
+   349→   349→const MODULE_ORDER = ["manha","mental","organizacao","noturno","semanal","saida","tarefas","humor","historico"];
+   350→   350→
+   351→   351→/* ================== STATE & STORAGE ================== */
+   352→   352→let ONLINE = false;
+   353→   353→let editMode = {};
+   354→   354→let cache = loadCache();
+   355→   355→function loadCache(){
+   356→   356→  try{ return JSON.parse(localStorage.getItem("ritual_cache")) || { items:[], status:[], tasks:[], mood:[] }; }
+   357→   357→  catch(e){ return { items:[], status:[], tasks:[], mood:[] }; }
+   358→   358→}
+   359→   359→function saveCache(){ localStorage.setItem("ritual_cache", JSON.stringify(cache)); }
+   360→   360→
+   361→   361→function todayKey(){
+   362→   362→  const d = new Date();
+   363→   363→  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+   364→   364→}
+   365→   365→function weekKey(){
+   366→   366→  const d = new Date();
+   367→   367→  const onejan = new Date(d.getFullYear(),0,1);
+   368→   368→  const week = Math.ceil((((d - onejan) / 86400000) + onejan.getDay()+1) / 7);
+   369→   369→  return d.getFullYear()+"-W"+String(week).padStart(2,"0");
+   370→   370→}
+   371→   371→function periodKeyFor(moduleKey){
+   372→   372→  return MODULES[moduleKey].period === "week" ? weekKey() : todayKey();
+   373→   373→}
+   374→   374→
+   375→   375→/* ================== SUPABASE I/O (com fallback local) ================== */
+   376→   376→async function fetchAll(){
+   377→   377→  try{
+   378→   378→    const [items, status, tasks, mood] = await Promise.all([
+   379→   379→      sb.from("checklist_items").select("*").order("position"),
+   380→   380→      sb.from("checklist_status").select("*"),
+   381→   381→      sb.from("tasks").select("*").order("position"),
+   382→   382→      sb.from("mood_log").select("*"),
+   383→   383→    ]);
+   384→   384→    if(items.error || status.error || tasks.error || mood.error) throw new Error("fetch error");
+   385→   385→    cache = { items: items.data, status: status.data, tasks: tasks.data, mood: mood.data };
+   386→   386→    saveCache();
+   387→   387→    setOnline(true);
+   388→   388→    await seedDefaultsIfNeeded();
+   389→   389→  }catch(e){
+   390→   390→    setOnline(false);
+   391→   391→  }
+   392→   392→}
+   393→   393→function setOnline(v){
+   394→   394→  ONLINE = v;
+   395→   395→  const b = document.getElementById("syncBadge");
+   396→   396→  b.textContent = v ? "sincronizado" : "offline (local)";
+   397→   397→  b.className = "sync " + (v ? "ok" : "off");
+   398→   398→}
+   399→   399→
+   400→   400→async function seedDefaultsIfNeeded(){
+   401→   401→  if(localStorage.getItem("ritual_seeded_v1")) return;
+   402→   402→  let needsInsert = [];
+   403→   403→  for(const key of Object.keys(MODULES)){
+   404→   404→    const m = MODULES[key];
+   405→   405→    if(m.kind !== "checklist") continue;
+   406→   406→    const existing = cache.items.filter(i=>i.module===key);
+   407→   407→    if(existing.length === 0){
+   408→   408→      m.defaults.forEach((label, idx)=>{
+   409→   409→        needsInsert.push({ module:key, label, position: idx, active:true });
+   410→   410→      });
+   411→   411→    }
+   412→   412→  }
+   413→   413→  if(needsInsert.length){
+   414→   414→    const { data, error } = await sb.from("checklist_items").insert(needsInsert).select();
+   415→   415→    if(!error && data){
+   416→   416→      cache.items = cache.items.concat(data);
+   417→   417→      saveCache();
+   418→   418→    }
+   419→   419→  }
+   420→   420→  localStorage.setItem("ritual_seeded_v1","1");
+   421→   421→}
+   422→   422→
+   423→   423→async function addItem(moduleKey, label){
+   424→   424→  const existing = cache.items.filter(i=>i.module===moduleKey);
+   425→   425→  const position = existing.length ? Math.max(...existing.map(i=>i.position))+1 : 0;
+   426→   426→  const row = { module: moduleKey, label, position, active:true };
+   427→   427→  try{
+   428→   428→    const { data, error } = await sb.from("checklist_items").insert(row).select().single();
+   429→   429→    if(error) throw error;
+   430→   430→    cache.items.push(data);
+   431→   431→  }catch(e){
+   432→   432→    row.id = "local-"+Date.now();
+   433→   433→    cache.items.push(row);
+   434→   434→  }
+   435→   435→  saveCache();
+   436→   436→  render();
+   437→   437→}
+   438→   438→async function editItemLabel(id, label){
+   439→   439→  const it = cache.items.find(i=>i.id===id);
+   440→   440→  if(it) it.label = label;
+   441→   441→  saveCache();
+   442→   442→  try{ await sb.from("checklist_items").update({label}).eq("id", id); }catch(e){}
+   443→   443→  render();
+   444→   444→}
+   445→   445→async function deleteItem(id){
+   446→   446→  cache.items = cache.items.filter(i=>i.id!==id);
+   447→   447→  saveCache();
+   448→   448→  try{ await sb.from("checklist_items").delete().eq("id", id); }catch(e){}
+   449→   449→  render();
+   450→   450→}
+   451→   451→async function moveItem(moduleKey, id, dir){
+   452→   452→  const list = cache.items.filter(i=>i.module===moduleKey).sort((a,b)=>a.position-b.position);
+   453→   453→  const idx = list.findIndex(i=>i.id===id);
+   454→   454→  const swapIdx = idx + dir;
+   455→   455→  if(swapIdx < 0 || swapIdx >= list.length) return;
+   456→   456→  const a = list[idx], b = list[swapIdx];
+   457→   457→  const tmp = a.position; a.position = b.position; b.position = tmp;
+   458→   458→  saveCache();
+   459→   459→  try{
+   460→   460→    await sb.from("checklist_items").update({position:a.position}).eq("id", a.id);
+   461→   461→    await sb.from("checklist_items").update({position:b.position}).eq("id", b.id);
+   462→   462→  }catch(e){}
+   463→   463→  render();
+   464→   464→}
+   465→   465→
+   466→   466→async function toggleCheck(itemId, periodKey, btnEl){
+   467→   467→  let st = cache.status.find(s=>s.item_id===itemId && s.period_key===periodKey);
+   468→   468→  const newVal = st ? !st.checked : true;
+   469→   469→  if(st){ st.checked = newVal; } else { st = {item_id:itemId, period_key:periodKey, checked:newVal}; cache.status.push(st); }
+   470→   470→  saveCache();
+   471→   471→  if(btnEl && newVal){
+   472→   472→    btnEl.style.setProperty("--tilt", (Math.random()*10-5)+"deg");
+   473→   473→    btnEl.classList.add("bump");
+   474→   474→    setTimeout(()=>btnEl.classList.remove("bump"), 300);
+   475→   475→  }
+   476→   476→  render();
+   477→   477→  try{
+   478→   478→    await sb.from("checklist_status").upsert(
+   479→   479→      { item_id: itemId, period_key: periodKey, checked: newVal, updated_at: new Date().toISOString() },
+   480→   480→      { onConflict: "item_id,period_key" }
+   481→   481→    );
+   482→   482→  }catch(e){}
+   483→   483→}
+   484→   484→
+   485→   485→async function resetModule(moduleKey){
+   486→   486→  if(!confirm("Resetar o checklist de \""+MODULES[moduleKey].label+"\" agora?")) return;
+   487→   487→  const periodKey = periodKeyFor(moduleKey);
+   488→   488→  const ids = cache.items.filter(i=>i.module===moduleKey).map(i=>i.id);
+   489→   489→  cache.status = cache.status.filter(s=> !(ids.includes(s.item_id) && s.period_key===periodKey));
+   490→   490→  saveCache();
+   491→   491→  render();
+   492→   492→  try{
+   493→   493→    for(const id of ids){
+   494→   494→      await sb.from("checklist_status").upsert(
+   495→   495→        { item_id:id, period_key:periodKey, checked:false, updated_at:new Date().toISOString() },
+   496→   496→        { onConflict: "item_id,period_key" }
+   497→   497→      );
+   498→   498→    }
+   499→   499→  }catch(e){}
+   500→   500→}
+   501→   501→
+   502→   502→async function addTask(label, priority){
+   503→   503→  const existing = cache.tasks.filter(t=>t.day_key===todayKey());
+   504→   504→  const position = existing.length ? Math.max(...existing.map(t=>t.position))+1 : 0;
+   505→   505→  const row = { label, done:false, position, day_key: todayKey(), priority: priority||"media" };
+   506→   506→  try{
+   507→   507→    const { data, error } = await sb.from("tasks").insert(row).select().single();
+   508→   508→    if(error) throw error;
+   509→   509→    cache.tasks.push(data);
+   510→   510→  }catch(e){
+   511→   511→    row.id = "local-"+Date.now();
+   512→   512→    cache.tasks.push(row);
+   513→   513→  }
+   514→   514→  saveCache();
+   515→   515→  render();
+   516→   516→}
+   517→   517→async function toggleTask(id){
+   518→   518→  const t = cache.tasks.find(x=>x.id===id);
+   519→   519→  if(!t) return;
+   520→   520→  t.done = !t.done;
+   521→   521→  saveCache(); render();
+   522→   522→  try{ await sb.from("tasks").update({done:t.done}).eq("id", id); }catch(e){}
+   523→   523→}
+   524→   524→async function deleteTask(id){
+   525→   525→  cache.tasks = cache.tasks.filter(t=>t.id!==id);
+   526→   526→  saveCache(); render();
+   527→   527→  try{ await sb.from("tasks").delete().eq("id", id); }catch(e){}
+   528→   528→}
+   529→   529→async function moveTask(id, dir){
+   530→   530→  const list = cache.tasks.filter(t=>t.day_key===todayKey()).sort((a,b)=>a.position-b.position);
+   531→   531→  const idx = list.findIndex(t=>t.id===id);
+   532→   532→  const swapIdx = idx+dir;
+   533→   533→  if(swapIdx<0 || swapIdx>=list.length) return;
+   534→   534→  const a=list[idx], b=list[swapIdx];
+   535→   535→  const tmp=a.position; a.position=b.position; b.position=tmp;
+   536→   536→  saveCache(); render();
+   537→   537→  try{
+   538→   538→    await sb.from("tasks").update({position:a.position}).eq("id", a.id);
+   539→   539→    await sb.from("tasks").update({position:b.position}).eq("id", b.id);
+   540→   540→  }catch(e){}
+   541→   541→}
+   542→   542→
+   543→   543→async function setMood(value, note){
+   544→   544→  const day = todayKey();
+   545→   545→  let m = cache.mood.find(x=>x.day_key===day);
+   546→   546→  if(m){ m.value=value; m.note=note; } else { m = {day_key:day, value, note}; cache.mood.push(m); }
+   547→   547→  saveCache(); render();
+   548→   548→  try{
+   549→   549→    await sb.from("mood_log").upsert({ day_key: day, value, note }, { onConflict: "day_key" });
+   550→   550→  }catch(e){}
+   551→   551→}
+   552→   552→
+   553→   553→/* ================== RENDER ================== */
+   554→   554→let activeModule = "manha";
+   555→   555→
+   556→   556→function renderTabs(){
+   557→   557→  const nav = document.getElementById("tabs");
+   558→   558→  nav.innerHTML = "";
+   559→   559→  MODULE_ORDER.forEach(key=>{
+   560→   560→    const b = document.createElement("button");
+   561→   561→    b.textContent = MODULES[key].label;
+   562→   562→    if(key===activeModule) b.classList.add("active");
+   563→   563→    b.onclick = ()=>{ activeModule = key; render(); };
+   564→   564→    nav.appendChild(b);
+   565→   565→  });
+   566→   566→}
+   567→   567→
+   568→   568→function setAccent(moduleKey){
+   569→   569→  document.documentElement.style.setProperty("--accent", MODULES[moduleKey].accent);
+   570→   570→  document.documentElement.style.setProperty("--accent-soft", MODULES[moduleKey].accent+"22");
+   571→   571→}
+   572→   572→
+   573→   573→function render(){
+   574→   574→  renderTabs();
+   575→   575→  setAccent(activeModule);
+   576→   576→  const area = document.getElementById("moduleArea");
+   577→   577→  const m = MODULES[activeModule];
+   578→   578→  if(m.kind === "checklist") area.innerHTML = "";
+   579→   579→  if(m.kind === "checklist") renderChecklist(area, activeModule);
+   580→   580→  else if(m.kind === "tasks") renderTasks(area);
+   581→   581→  else if(m.kind === "mood") renderMood(area);
+   582→   582→  else if(m.kind === "history") renderHistory(area);
+   583→   583→}
+   584→   584→
+   585→   585→function renderChecklist(area, moduleKey){
+   586→   586→  const m = MODULES[moduleKey];
+   587→   587→  const periodKey = periodKeyFor(moduleKey);
+   588→   588→  const items = cache.items.filter(i=>i.module===moduleKey && i.active).sort((a,b)=>a.position-b.position);
+   589→   589→  const checkedCount = items.filter(i=>{
+   590→   590→    const st = cache.status.find(s=>s.item_id===i.id && s.period_key===periodKey);
+   591→   591→    return st && st.checked;
+   592→   592→  }).length;
+   593→   593→  const pct = items.length ? Math.round(checkedCount/items.length*100) : 0;
+   594→   594→
+   595→   595→  const card = document.createElement("div");
+   596→   596→  card.className = "card";
+   597→   597→  card.innerHTML = `
+   598→   598→    <div class="module-head">
+   599→   599→      <div>
+   600→   600→        <h2>${m.label}</h2>
+   601→   601→        <span class="period">${m.period==="week" ? "semana "+periodKey.split("-W")[1] : new Date().toLocaleDateString('pt-BR',{weekday:'long', day:'2-digit', month:'short'})}</span>
+   602→   602→      </div>
+   603→   603→      <span class="frac">${checkedCount}/${items.length}</span>
+   604→   604→    </div>
+   605→   605→    <div class="bar"><div style="width:${pct}%"></div></div>
+   606→   606→    <ul class="items" id="list-${moduleKey}"></ul>
+   607→   607→    ${items.length===0 ? '<p class="empty">Nenhum item ainda. Adicione abaixo.</p>' : ""}
+   608→   608→    <div class="row-actions">
+   609→   609→      <button class="btn" id="editBtn-${moduleKey}">${editMode[moduleKey] ? "Concluir edição" : "Editar itens"}</button>
+   610→   610→      <button class="btn ghost" id="resetBtn-${moduleKey}">Resetar ${m.period==="week"?"semana":"dia"}</button>
+   611→   611→    </div>
+   612→   612→    ${editMode[moduleKey] ? `<div class="add-row"><input type="text" id="newItem-${moduleKey}" placeholder="Novo item..."><button class="btn primary" id="addBtn-${moduleKey}">Add</button></div>` : ""}
+   613→   613→  `;
+   614→   614→  area.appendChild(card);
+   615→   615→
+   616→   616→  const list = card.querySelector(`#list-${moduleKey}`);
+   617→   617→  items.forEach(it=>{
+   618→   618→    const st = cache.status.find(s=>s.item_id===it.id && s.period_key===periodKey);
+   619→   619→    const checked = st && st.checked;
+   620→   620→    const li = document.createElement("li");
+   621→   621→    li.innerHTML = `
+   622→   622→      <button class="stamp ${checked?'checked':''}" aria-label="marcar">${checked?'OK':''}</button>
+   623→   623→      <span class="item-label ${checked?'done':''}">${escapeHtml(it.label)}</span>
+   624→   624→      ${editMode[moduleKey] ? `<div class="edit-controls">
+   625→   625→        <button data-act="up">↑</button>
+   626→   626→        <button data-act="down">↓</button>
+   627→   627→        <button data-act="edit">✎</button>
+   628→   628→        <button data-act="del">✕</button>
+   629→   629→      </div>` : ""}
+   630→   630→    `;
+   631→   631→    li.querySelector(".stamp").onclick = (e)=> toggleCheck(it.id, periodKey, e.currentTarget);
+   632→   632→    if(editMode[moduleKey]){
+   633→   633→      li.querySelector('[data-act="up"]').onclick = ()=> moveItem(moduleKey, it.id, -1);
+   634→   634→      li.querySelector('[data-act="down"]').onclick = ()=> moveItem(moduleKey, it.id, 1);
+   635→   635→      li.querySelector('[data-act="edit"]').onclick = ()=>{
+   636→   636→        const novo = prompt("Editar item:", it.label);
+   637→   637→        if(novo && novo.trim()) editItemLabel(it.id, novo.trim());
+   638→   638→      };
+   639→   639→      li.querySelector('[data-act="del"]').onclick = ()=>{
+   640→   640→        if(confirm("Remover este item?")) deleteItem(it.id);
+   641→   641→      };
+   642→   642→    }
+   643→   643→    list.appendChild(li);
+   644→   644→  });
+   645→   645→
+   646→   646→  card.querySelector(`#editBtn-${moduleKey}`).onclick = ()=>{
+   647→   647→    editMode[moduleKey] = !editMode[moduleKey];
+   648→   648→    render();
+   649→   649→  };
+   650→   650→  card.querySelector(`#resetBtn-${moduleKey}`).onclick = ()=> resetModule(moduleKey);
+   651→   651→  const addBtn = card.querySelector(`#addBtn-${moduleKey}`);
+   652→   652→  if(addBtn){
+   653→   653→    const input = card.querySelector(`#newItem-${moduleKey}`);
+   654→   654→    const submit = ()=>{
+   655→   655→      const v = input.value.trim();
+   656→   656→      if(v){ addItem(moduleKey, v); input.value=""; }
+   657→   657→    };
+   658→   658→    addBtn.onclick = submit;
+   659→   659→    input.onkeydown = (e)=>{ if(e.key==="Enter") submit(); };
+   660→   660→  }
+   661→   661→}
+   662→   662→
+   663→   663→function renderTasks(area){
+   664→   664→  const day = todayKey();
+   665→   665→  const tasks = cache.tasks.filter(t=>t.day_key===day).sort((a,b)=>a.position-b.position);
+   666→   666→  const done = tasks.filter(t=>t.done).length;
+   667→   667→  const prioColor = { alta:"#B5566B", media:"#D6A23C", baixa:"#6B7A3A" };
+   668→   668→
+   669→   669→  const card = document.createElement("div");
+   670→   670→  card.className = "card";
+   671→   671→  card.innerHTML = `
+   672→   672→    <div class="module-head">
+   673→   673→      <div><h2>Tarefas</h2><span class="period">${new Date().toLocaleDateString('pt-BR',{weekday:'long', day:'2-digit', month:'short'})}</span></div>
+   674→   674→      <span class="frac">${done}/${tasks.length}</span>
+   675→   675→    </div>
+   676→   676→    <ul class="items" id="taskList"></ul>
+   677→   677→    ${tasks.length===0 ? '<p class="empty">Sem tarefas hoje. Adicione abaixo.</p>' : ""}
+   678→   678→    <div class="add-row">
+   679→   679→      <input type="text" id="newTask" placeholder="Nova tarefa...">
+   680→   680→      <select class="priority" id="taskPriority">
+   681→   681→        <option value="baixa">baixa</option>
+   682→   682→        <option value="media" selected>média</option>
+   683→   683→        <option value="alta">alta</option>
+   684→   684→      </select>
+   685→   685→      <button class="btn primary" id="addTaskBtn">Add</button>
+   686→   686→    </div>
+   687→   687→  `;
+   688→   688→  area.appendChild(card);
+   689→   689→
+   690→   690→  const list = card.querySelector("#taskList");
+   691→   691→  tasks.forEach(t=>{
+   692→   692→    const li = document.createElement("li");
+   693→   693→    li.innerHTML = `
+   694→   694→      <button class="stamp ${t.done?'checked':''}" aria-label="marcar">${t.done?'OK':''}</button>
+   695→   695→      <span class="item-label ${t.done?'done':''}">${escapeHtml(t.label)}</span>
+   696→   696→      <span class="pill" style="background:${prioColor[t.priority]||'#6B5D4D'}">${t.priority}</span>
+   697→   697→      <div class="edit-controls">
+   698→   698→        <button data-act="up">↑</button>
+   699→   699→        <button data-act="down">↓</button>
+   700→   700→        <button data-act="del">✕</button>
+   701→   701→      </div>
+   702→   702→    `;
+   703→   703→    li.querySelector(".stamp").onclick = (e)=>{
+   704→   704→      toggleTask(t.id);
+   705→   705→      e.currentTarget.classList.add("bump");
+   706→   706→    };
+   707→   707→    li.querySelector('[data-act="up"]').onclick = ()=> moveTask(t.id, -1);
+   708→   708→    li.querySelector('[data-act="down"]').onclick = ()=> moveTask(t.id, 1);
+   709→   709→    li.querySelector('[data-act="del"]').onclick = ()=>{ if(confirm("Remover tarefa?")) deleteTask(t.id); };
+   710→   710→    list.appendChild(li);
+   711→   711→  });
+   712→   712→
+   713→   713→  const addBtn = card.querySelector("#addTaskBtn");
+   714→   714→  const input = card.querySelector("#newTask");
+   715→   715→  const prio = card.querySelector("#taskPriority");
+   716→   716→  const submit = ()=>{
+   717→   717→    const v = input.value.trim();
+   718→   718→    if(v){ addTask(v, prio.value); input.value=""; }
+   719→   719→  };
+   720→   720→  addBtn.onclick = submit;
+   721→   721→  input.onkeydown = (e)=>{ if(e.key==="Enter") submit(); };
+   722→   722→}
+   723→   723→
+   724→   724→function renderMood(area){
+   725→   725→  const day = todayKey();
+   726→   726→  const current = cache.mood.find(m=>m.day_key===day);
+   727→   727→  const options = [
+   728→   728→    {v:1, e:"😞"}, {v:2, e:"🙁"}, {v:3, e:"😐"}, {v:4, e:"🙂"}, {v:5, e:"😄"}
+   729→   729→  ];
+   730→   730→  const card = document.createElement("div");
+   731→   731→  card.className = "card";
+   732→   732→  card.innerHTML = `
+   733→   733→    <div class="module-head"><div><h2>Humor</h2><span class="period">${new Date().toLocaleDateString('pt-BR',{weekday:'long', day:'2-digit', month:'short'})}</span></div></div>
+   734→   734→    <div class="mood-grid" id="moodGrid"></div>
+   735→   735→    <textarea class="note" id="moodNote" placeholder="Algo que queira anotar sobre hoje (opcional)">${current ? escapeHtml(current.note||"") : ""}</textarea>
+   736→   736→    <div class="row-actions"><button class="btn primary" id="saveMood">Salvar humor</button></div>
+   737→   737→  `;
+   738→   738→  area.appendChild(card);
+   739→   739→  const grid = card.querySelector("#moodGrid");
+   740→   740→  let selected = current ? current.value : null;
+   741→   741→  options.forEach(o=>{
+   742→   742→    const b = document.createElement("button");
+   743→   743→    b.textContent = o.e;
+   744→   744→    if(selected===o.v) b.classList.add("selected");
+   745→   745→    b.onclick = ()=>{ selected=o.v; grid.querySelectorAll("button").forEach(x=>x.classList.remove("selected")); b.classList.add("selected"); };
+   746→   746→    grid.appendChild(b);
+   747→   747→  });
+   748→   748→  card.querySelector("#saveMood").onclick = ()=>{
+   749→   749→    if(!selected){ alert("Escolha um humor primeiro."); return; }
+   750→   750→    setMood(selected, card.querySelector("#moodNote").value.trim());
+   751→   751→  };
+   752→   752→}
+   753→   753→
+   754→   754→function renderHistory(area){
+   755→   755→  const dailyModules = MODULE_ORDER.filter(k=>MODULES[k].kind==="checklist" && MODULES[k].period==="day");
+   756→   756→
+   757→   757→  // streaks
+   758→   758→  const streaksCard = document.createElement("div");
+   759→   759→  streaksCard.className = "card hist-block";
+   760→   760→  streaksCard.innerHTML = `<h3>Sequência atual</h3><div class="streaks" id="streaks"></div>`;
+   761→   761→  area.appendChild(streaksCard);
+   762→   762→  const streaksEl = streaksCard.querySelector("#streaks");
+   763→   763→  dailyModules.forEach(key=>{
+   764→   764→    const streak = computeStreak(key);
+   765→   765→    const chip = document.createElement("div");
+   766→   766→    chip.className = "streak-chip";
+   767→   767→    chip.style.borderColor = MODULES[key].accent+"55";
+   768→   768→    chip.innerHTML = `<b style="color:${MODULES[key].accent}">${streak}</b>${MODULES[key].label}`;
+   769→   769→    streaksEl.appendChild(chip);
+   770→   770→  });
+   771→   771→
+   772→   772→  // completion last 7 days
+   773→   773→  const compCard = document.createElement("div");
+   774→   774→  compCard.className = "card hist-block";
+   775→   775→  compCard.innerHTML = `<h3>Conclusão — últimos 7 dias</h3><div id="compRows"></div>`;
+   776→   776→  area.appendChild(compCard);
+   777→   777→  const rows = compCard.querySelector("#compRows");
+   778→   778→  dailyModules.forEach(key=>{
+   779→   779→    const pct = computeCompletionPct(key, 7);
+   780→   780→    const row = document.createElement("div");
+   781→   781→    row.className = "hist-row";
+   782→   782→    row.innerHTML = `<span class="label">${MODULES[key].label}</span><div class="track"><div style="width:${pct}%; background:${MODULES[key].accent}"></div></div><span class="pct">${pct}%</span>`;
+   783→   783→    rows.appendChild(row);
+   784→   784→  });
+   785→   785→
+   786→   786→  // mood chart last 14 days
+   787→   787→  const moodCard = document.createElement("div");
+   788→   788→  moodCard.className = "card hist-block";
+   789→   789→  moodCard.innerHTML = `<h3>Humor — últimos 14 dias</h3><div class="mood-chart" id="moodChart"></div><div class="mood-chart-labels" id="moodLabels"></div>`;
+   790→   790→  area.appendChild(moodCard);
+   791→   791→  const chart = moodCard.querySelector("#moodChart");
+   792→   792→  const labels = moodCard.querySelector("#moodLabels");
+   793→   793→  const days = lastNDays(14);
+   794→   794→  days.forEach(d=>{
+   795→   795→    const entry = cache.mood.find(m=>m.day_key===d);
+   796→   796→    const v = entry ? entry.value : 0;
+   797→   797→    const bar = document.createElement("div");
+   798→   798→    bar.className = "bar2";
+   799→   799→    bar.style.height = (v ? v*14 : 2)+"px";
+   800→   800→    bar.style.background = v ? MODULES.humor.accent : "#DCC9A0";
+   801→   801→    chart.appendChild(bar);
+   802→   802→    const lab = document.createElement("span");
+   803→   803→    lab.textContent = d.slice(8);
+   804→   804→    labels.appendChild(lab);
+   805→   805→  });
+   806→   806→  if(!days.some(d=>cache.mood.find(m=>m.day_key===d))){
+   807→   807→    moodCard.querySelector("h3").insertAdjacentHTML("afterend", '<p class="empty">Sem registros de humor ainda.</p>');
+   808→   808→  }
+   809→   809→
+   810→   810→  // tasks this week
+   811→   811→  const tCard = document.createElement("div");
+   812→   812→  tCard.className = "card hist-block";
+   813→   813→  const weekDays = lastNDays(7);
+   814→   814→  const weekTasks = cache.tasks.filter(t=>weekDays.includes(t.day_key));
+   815→   815→  const weekDone = weekTasks.filter(t=>t.done).length;
+   816→   816→  tCard.innerHTML = `<h3>Tarefas — últimos 7 dias</h3><p class="small-note">${weekDone} de ${weekTasks.length} tarefas concluídas.</p>`;
+   817→   817→  area.appendChild(tCard);
+   818→   818→}
+   819→   819→
+   820→   820→function lastNDays(n){
+   821→   821→  const arr = [];
+   822→   822→  for(let i=n-1; i>=0; i--){
+   823→   823→    const d = new Date();
+   824→   824→    d.setDate(d.getDate()-i);
+   825→   825→    arr.push(d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"));
+   826→   826→  }
+   827→   827→  return arr;
+   828→   828→}
+   829→   829→function computeCompletionPct(moduleKey, n){
+   830→   830→  const items = cache.items.filter(i=>i.module===moduleKey && i.active);
+   831→   831→  if(items.length===0) return 0;
+   832→   832→  const days = lastNDays(n);
+   833→   833→  let totalPossible=0, totalDone=0;
+   834→   834→  days.forEach(day=>{
+   835→   835→    items.forEach(it=>{
+   836→   836→      const st = cache.status.find(s=>s.item_id===it.id && s.period_key===day);
+   837→   837→      if(st){ totalPossible++; if(st.checked) totalDone++; }
+   838→   838→    });
+   839→   839→  });
+   840→   840→  if(totalPossible===0) return 0;
+   841→   841→  return Math.round(totalDone/totalPossible*100);
+   842→   842→}
+   843→   843→function computeStreak(moduleKey){
+   844→   844→  const items = cache.items.filter(i=>i.module===moduleKey && i.active);
+   845→   845→  if(items.length===0) return 0;
+   846→   846→  let streak = 0;
+   847→   847→  for(let i=0;i<365;i++){
+   848→   848→    const d = new Date();
+   849→   849→    d.setDate(d.getDate()-i);
+   850→   850→    const key = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+   851→   851→    const allChecked = items.every(it=>{
+   852→   852→      const st = cache.status.find(s=>s.item_id===it.id && s.period_key===key);
+   853→   853→      return st && st.checked;
+   854→   854→    });
+   855→   855→    if(allChecked) streak++;
+   856→   856→    else break;
+   857→   857→  }
+   858→   858→  return streak;
+   859→   859→}
+   860→   860→
+   861→   861→function escapeHtml(s){
+   862→   862→  const div = document.createElement("div");
+   863→   863→  div.textContent = s;
+   864→   864→  return div.innerHTML;
+   865→   865→}
+   866→   866→
+   867→   867→/* ================== INIT ================== */
+   868→   868→(async function init(){
+   869→   869→  const params = new URLSearchParams(window.location.search);
+   870→   870→  const mod = params.get("modulo");
+   871→   871→  if(mod && MODULES[mod]) activeModule = mod;
+   872→   872→  render(); // render imediato com cache local
+   873→   873→  await fetchAll();
+   874→   874→  render(); // re-render com dados do Supabase (se disponíveis)
+   875→   875→})();
+   876→   876→</script>
+   877→   877→</body>
+   878→   878→</html>
+   879→   879→
