@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: checklife
+    env: node
+    buildCommand: bun install && bun run build
+    startCommand: bash scripts/start.sh
+    envVars:
+      - key: DATABASE_URL
+        value: file:/opt/render/project/.data/prisma/dev.db
+    disk:
+      name: data
+      mountPath: /opt/render/project/.data
+      sizeGB: 1
